@@ -1,0 +1,56 @@
+# lite3_driver: the Lite3 motion host over UDP (Deep Robotics "UDP Commands" V1.1.0).
+# The node name below must match the launch (lite3_driver); it runs in the robot namespace.
+lite3_driver:
+  ros__parameters:
+    # Network: commands go to the motion host's port 43893. Its reports (state 50 Hz, joints
+    # 100 Hz) only reach this computer when its IP and local_port are listed in
+    # ~/jy_exe/conf/network.toml on the motion host (scripts/lite3_setup.sh in lite3_bringup).
+    motion_host_ip: 192.168.1.120
+    motion_host_port: 43893
+    local_ip: 0.0.0.0
+    local_port: 43897
+    heartbeat_hz: 5.0                 # the motion host wants at least 2 Hz
+
+    # Velocity: cmd_vel (base_link, REP-103) -> speed commands 0x0140 / 0x0145 / 0x0141, which
+    # the robot obeys in navigation mode only.
+    cmd_rate_hz: 20.0                 # speed commands per second while cmd_vel is fresh
+    cmd_timeout_sec: 0.5              # cmd_vel older than this: zeros (the Molly contract)
+    stop_burst_sec: 0.5               # zeros streamed after the timeout, then silence
+    auto_navigation_mode: true        # send navigation mode when motion starts after idle
+    mode_refresh_sec: 2.0             # and again this often while moving
+    max_vx: 1.0                       # m/s, protocol range 1.0
+    max_vy: 0.5                       # m/s, protocol range 0.5
+    max_wz: 1.5                       # rad/s, protocol range 1.5
+    invert_vy: false                  # true if +linear.y moves the robot RIGHT (checklist)
+    invert_wz: false                  # true if +angular.z turns the robot RIGHT (checklist)
+
+    # Outputs
+    odom_frame: odom                  # header of the odom message only: no TF is published
+    base_frame: base_link
+    imu_frame: imu_link
+    odom_hz: 50.0                     # odom + imu, one per new state report, at most this rate
+    joint_state_hz: 50.0
+    state_hz: 10.0                    # lite3_interfaces/RobotState
+    battery_hz: 1.0
+    ultrasound_hz: 10.0
+    state_timeout_sec: 1.0            # no state report for this long: disconnected
+    low_battery: 0.2                  # 0-1, diagnostics warn below
+
+    # Gestures (std_srvs/Trigger, blocking until done). Pose-mode keyframes: axis values in
+    # [-32767, 32767] beyond the dead zones (pitch 6553, yaw 9553); pitch > 0 lowers the head,
+    # yaw > 0 turns right. They run only while the robot stands still.
+    gesture.rate_hz: 20.0             # axis commands per second (the robot drops pose mode after 1 s)
+    gesture.nod_pitch: 22000
+    gesture.nod_cycles: 2
+    gesture.nod_period_sec: 0.9
+    gesture.bow_pitch: 26000
+    gesture.bow_hold_sec: 1.5
+    gesture.look_yaw: 16000
+    gesture.look_hold_sec: 1.5
+    gesture.settle_sec: 0.5
+    gesture.use_manual_mode: true     # manual mode during pose gestures, navigation mode after
+    gesture.sit_timeout_sec: 8.0      # hello: sitting down / settling
+    gesture.hello_start_timeout_sec: 3.0
+    gesture.hello_timeout_sec: 15.0
+    gesture.stand_timeout_sec: 8.0    # hello: standing up again
+    gesture.quiet_sec: 1.0            # no gesture within this long after a motion command

@@ -23,13 +23,14 @@ APPENDIX_ANGLES = [
 
 def report(**overrides) -> p.StateReport:
     """Return a state report with distinct values in every field."""
-    values = dict(
-        basic_state=6, gait_state=4, policy_state=0,
-        rpy_deg=(1.5, -2.0, 90.0), rpy_vel=(0.01, 0.02, 0.3), xyz_acc=(0.1, 0.2, 9.8),
-        pos_world=(1.25, -0.5, 0.75), vel_world=(0.2, 0.1, 0.3), vel_body=(0.3, -0.05, 0.4),
-        layout='natural', motion_state=1, battery=0.82, error_state=0, balance_lost=True,
-        zeroed=True, first_start=False, voice_enabled=True, ultrasound=(1.2, 3.4),
-    )
+    values = {
+        'basic_state': 6, 'gait_state': 4, 'policy_state': 0,
+        'rpy_deg': (1.5, -2.0, 90.0), 'rpy_vel': (0.01, 0.02, 0.3), 'xyz_acc': (0.1, 0.2, 9.8),
+        'pos_world': (1.25, -0.5, 0.75), 'vel_world': (0.2, 0.1, 0.3),
+        'vel_body': (0.3, -0.05, 0.4), 'layout': 'natural', 'motion_state': 1, 'battery': 0.82,
+        'error_state': 0, 'balance_lost': True, 'zeroed': True, 'first_start': False,
+        'voice_enabled': True, 'ultrasound': (1.2, 3.4),
+    }
     values.update(overrides)
     return p.StateReport(**values)
 
