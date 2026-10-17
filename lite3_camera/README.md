@@ -1,8 +1,16 @@
 # lite3_camera
 
-`rtsp_camera_node`: the Lite3's own wide-angle front camera as a ROS camera. The motion host
+The Lite3's own wide-angle front camera as a ROS camera. The motion host
 streams it at `rtsp://<motion host>:8554/test` (Deep Robotics *UDP Commands* 1.2.11:
 `192.168.1.120` or `192.168.2.1`).
+
+## Nodes
+
+| Node | Executable | |
+|---|---|---|
+| `rtsp_camera` (`front_camera` in `lite3_bringup`) | `rtsp_camera_node` | RTSP → `Image`, `CompressedImage`, `CameraInfo` |
+
+## Usage
 
 ```bash
 ros2 run lite3_camera rtsp_camera_node --ros-args \
@@ -15,6 +23,8 @@ ros2 run lite3_camera rtsp_camera_node --ros-args \
 `lite3_bringup` starts it with these remappings (`camera:=rtsp`), so Molly sees the camera where
 the robot package contract wants it.
 
+## Behaviour
+
 - **Decoding**: GStreamer through OpenCV. `decoder: auto` tries the Jetson hardware decoder
   (`nvv4l2decoder`), then software (`avdec_h264`, gstreamer1.0-libav), then OpenCV's FFmpeg
   reader; the one that worked is tried first on every reconnect. The appsink keeps only the
@@ -25,7 +35,9 @@ the robot package contract wants it.
   `rational_polynomial` or fisheye `equidistant`) the published image is undistorted and
   `camera_info` describes the ideal pinhole camera (no distortion), which is what the AprilTag
   detector expects. Without it `camera_info` assumes `default_hfov_deg`; tag poses are then only
-  approximate. Calibrate once: [config/calibration.example.yaml](config/calibration.example.yaml).
+  approximate.
+
+## Topics
 
 | Topic | Type | |
 |---|---|---|
@@ -36,7 +48,33 @@ the robot package contract wants it.
 All in `frame_id` `camera_color_optical_frame`, stamped with the receive time minus
 `latency_sec`.
 
-Parameters: [config/camera_params.yaml](config/camera_params.yaml).
+## Parameters
+
+[config/camera_params.yaml](config/camera_params.yaml), every one commented:
+
+| Parameter | Default | |
+|---|---|---|
+| `url` | `rtsp://192.168.1.120:8554/test` | `lite3_bringup` derives it from `motion_host:=` |
+| `codec`, `decoder` | `h264`, `auto` | `h264` / `h265`; `auto`, `jetson`, `software`, `ffmpeg` |
+| `latency_ms`, `protocols` | 0, `tcp` | rtspsrc jitter buffer and transport |
+| `width`, `height` | 0, 0 | 0: the stream's own size |
+| `max_fps` | 15.0 | 0: every frame |
+| `frame_id` | `camera_color_optical_frame` | |
+| `calibration_file`, `alpha` | `""`, 0.0 | rectification; `alpha` 0 crops, 1 keeps every pixel |
+| `default_hfov_deg` | 120.0 | `camera_info` without a calibration |
+| `publish_raw`, `publish_compressed` | true, true | |
+| `jpeg_quality`, `compressed_fps` | 75, 10.0 | |
+| `latency_sec` | 0.1 | subtracted from the receive time |
+| `reconnect_sec` | 2.0 | first retry delay, doubling up to 30 s |
+
+## Calibration
+
+Calibrate once with `camera_calibration` (`ros2 run camera_calibration cameracalibrator ...`), save
+the YAML (format: [config/calibration.example.yaml](config/calibration.example.yaml)) and set
+`calibration_file` in a copy of `camera_params.yaml` (`camera_params:=` of `lite3_bringup`).
+
+## Troubleshooting
+
 
 **OpenCV needs GStreamer.** The Ubuntu / JetPack `python3-opencv` has it; a pip `opencv-python`
 does not and hides the system one (`pip uninstall opencv-python`). The node logs a warning when

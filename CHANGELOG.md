@@ -20,3 +20,11 @@ versions follow [SemVer](https://semver.org).
   and rectification from a calibration file.
 - `lite3_bringup`: one launch for the robot package contract of Molly, and `lite3_setup.sh`
   (`check`, `install`, `network [--apply]` for the motion host's `network.toml`).
+
+### Docs
+- README: Quick start (network.toml, build, launch, check) and a "Verify on the real robot"
+  checklist (state layout, navigation mode, `invert_wz` / `invert_vy`, camera calibration); fixed
+  the `lite3_setup.sh check` path, which ran from the wrong directory.
+- Package READMEs share one layout (Nodes, Topics, Services, Parameters, Launch, Usage); added
+  the `lite3_driver` launch arguments, the `lite3_camera` parameter table, the `display.launch.py`
+  `gui` argument and the `RobotState` fields; relative links checked.

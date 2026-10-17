@@ -13,8 +13,8 @@ Livox Mid-360 and the camera.**
 ![Jetson](https://img.shields.io/badge/Jetson-Orin%20NX-76B900?logo=nvidia&logoColor=white)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-[Packages](#packages) · [Network](#network) · [Install](#install) · [Checklist](#checklist) ·
-[Safety](#safety) · [Develop](#develop)
+[Packages](#packages) · [Network](#network) · [Quick start](#quick-start) ·
+[Verify on the real robot](#verify-on-the-real-robot) · [Safety](#safety) · [Develop](#develop)
 
 </div>
 
@@ -44,11 +44,11 @@ flowchart LR
 
 | Package | |
 |---|---|
-| [`lite3_driver`](lite3_driver) | the UDP driver: `cmd_vel` → speed commands in navigation mode; state → `odom`, `imu`, `battery`, `joint_states`, `ultrasound/*`, `state`, `diagnostics`; every robot command as a `std_srvs/Trigger` service; gestures |
-| [`lite3_interfaces`](lite3_interfaces) | `RobotState`: basic state, gait, motion, battery, ultrasound, link, gesture |
-| [`lite3_description`](lite3_description) | URDF: legs from the document, Mid-360, D435i or front camera, IMU and ultrasound frames |
-| [`lite3_camera`](lite3_camera) | the robot's wide-angle front camera over RTSP: Jetson hardware decoding, reconnects, rectification |
-| [`lite3_bringup`](lite3_bringup) | one launch for all of it, and `scripts/lite3_setup.sh` |
+| [`lite3_driver`](lite3_driver/README.md) | the UDP driver: `cmd_vel` → speed commands in navigation mode; state → `odom`, `imu`, `battery`, `joint_states`, `ultrasound/*`, `state`, `diagnostics`; every robot command as a `std_srvs/Trigger` service; gestures |
+| [`lite3_interfaces`](lite3_interfaces/README.md) | `RobotState`: basic state, gait, motion, battery, ultrasound, link, gesture |
+| [`lite3_description`](lite3_description/README.md) | URDF: legs from the document, Mid-360, D435i or front camera, IMU and ultrasound frames |
+| [`lite3_camera`](lite3_camera/README.md) | the robot's wide-angle front camera over RTSP: Jetson hardware decoding, reconnects, rectification |
+| [`lite3_bringup`](lite3_bringup/README.md) | one launch for all of it, and [`scripts/lite3_setup.sh`](lite3_bringup/scripts/lite3_setup.sh) |
 
 **Services** of the driver, under the namespace (`/robot/` by default):
 
@@ -82,42 +82,68 @@ Give the Jetson a free static address on the robot's network (e.g. `192.168.1.11
 Mid-360 its own (`192.168.1.1XX`, from its serial number), then set `LIVOX_LIDAR_IP` and
 `LIVOX_HOST_IP` (or `lidar_ip:=` / `host_ip:=`).
 
-## Install
+## Quick start
 
-Ubuntu 22.04, ROS 2 Humble (JetPack 6 on the Jetson).
+Ubuntu 22.04, ROS 2 Humble (JetPack 6 on the Jetson). Connect the Jetson to the robot's network
+first (see [Network](#network)).
 
 ```bash
-cd ~/ros2_ws/src
+# 1. Sources and dependencies
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 git clone https://github.com/DarmawanRobotics/lite3_ros2.git
-git clone -b humble https://github.com/JasonY85/livox_ros_driver2.git   # needs Livox-SDK2
+git clone -b humble https://github.com/JasonY85/livox_ros_driver2.git   # optional, needs Livox-SDK2
 lite3_ros2/lite3_bringup/scripts/lite3_setup.sh install
-cd ~/ros2_ws && rosdep install --from-paths src --ignore-src -y && colcon build
-source install/setup.bash
+
+# 2. network.toml: let the motion host send its state to this computer, then restart the robot
+lite3_ros2/lite3_bringup/scripts/lite3_setup.sh network           # prints the change
+lite3_ros2/lite3_bringup/scripts/lite3_setup.sh network --apply   # makes it over ssh, with a backup
+
+# 3. Build
+cd ~/ros2_ws
+rosdep install --from-paths src --ignore-src -y
+colcon build && source install/setup.bash
+
+# 4. Launch
 ros2 launch lite3_bringup bringup.launch.py
-lite3_ros2/lite3_bringup/scripts/lite3_setup.sh check
+
+# 5. In a second terminal: check state reports, GStreamer and OpenCV
+~/ros2_ws/src/lite3_ros2/lite3_bringup/scripts/lite3_setup.sh check
+ros2 topic echo --once /robot/state
 ```
+
+Then work through [Verify on the real robot](#verify-on-the-real-robot), including the `cmd_vel`
+sign conventions (steps 5 and 6), before any autonomy drives the robot.
 
 Inside Molly the repository is the submodule `src/xtras/robots/lite3_ros2`, with
 `ROBOT_BRINGUP=lite3_bringup`, `ROBOT_SETUP=src/xtras/robots/lite3_ros2/lite3_bringup/scripts/lite3_setup.sh`
 and `ROBOT_IP=192.168.1.120` in `/etc/molly/molly.env`.
 
-## Checklist
+## Verify on the real robot
 
 On a new robot, in an open area with someone at the remote:
 
-1. **Reports arrive:** `ros2 topic hz /robot/odom` shows ~50 Hz and `ros2 topic echo /robot/state`
-   says `connected: true` and the real basic state. If not: `lite3_setup.sh network`.
-2. **Stand:** `ros2 service call /robot/stand_up std_srvs/srv/Trigger`.
-3. **Forward:** `ros2 topic pub -r 20 /robot/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"`
+1. **Jetson in `network.toml`:** `ros2 topic hz /robot/odom` shows ~50 Hz and
+   `ros2 topic echo /robot/state` says `connected: true` and the real basic state. If not:
+   `lite3_setup.sh network`, then restart the robot.
+2. **State layout:** `state.layout` is `natural`, `pack4` or `pack1`. `prefix` means an unknown
+   report length (only attitude, odometry and velocities are decoded): report it.
+3. **Stand:** `ros2 service call /robot/stand_up std_srvs/srv/Trigger`.
+4. **Navigation mode:** speed commands are obeyed in navigation mode only. With
+   `auto_navigation_mode: true` (default) the driver switches on its own and `state.control_mode`
+   reads `navigation`; otherwise call `/robot/navigation_mode`.
+5. **Forward:** `ros2 topic pub -r 20 /robot/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"`
    walks forward. Stop the publisher: the robot stops within 0.5 s.
-4. **Turn:** `{angular: {z: 0.3}}` must turn the robot **left** (counter-clockwise seen from
-   above). If it turns right, set `invert_wz: true` in your copy of `driver_params.yaml`.
-5. **Strafe:** `{linear: {y: 0.1}}` must move it **left**; otherwise `invert_vy: true`.
-6. **Frames:** `ros2 run tf2_ros tf2_echo base_link livox_imu_frame`, and measure the front
-   camera and ultrasound positions: the URDF has estimates for them.
-7. **Camera:** `ros2 topic hz /camera/camera/color/image_raw`, then calibrate it
-   ([lite3_camera](lite3_camera)) before using AprilTags.
-8. **Gestures:** `nod`, `bow`, `look_left`, `look_right` and `hello` with nobody close to the robot.
+6. **Turn and strafe (REP-103):** `{angular: {z: 0.3}}` must turn the robot **left**
+   (counter-clockwise seen from above), else set `invert_wz: true`; `{linear: {y: 0.1}}` must move
+   it **left**, else `invert_vy: true`. Set both in your copy of
+   [driver_params.yaml](lite3_driver/config/driver_params.yaml) (`driver_params:=`).
+7. **Frames:** `ros2 run tf2_ros tf2_echo base_link livox_imu_frame`, and measure the front
+   camera and ultrasound positions: the URDF has estimates for them
+   ([lite3_description](lite3_description/README.md#frames-relative-to-base_link-metres)).
+8. **Camera:** `ros2 topic hz /camera/camera/color/image_raw`, then calibrate it
+   ([lite3_camera](lite3_camera/README.md#calibration)) and set `calibration_file` before using
+   AprilTags.
+9. **Gestures:** `nod`, `bow`, `look_left`, `look_right` and `hello` with nobody close to the robot.
 
 ## Safety
 

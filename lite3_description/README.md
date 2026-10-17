@@ -2,10 +2,17 @@
 
 URDF of the Deep Robotics Jueying Lite3 with its sensor frames, as simple shapes (no meshes).
 
+## Usage
+
 ```bash
 ros2 launch lite3_description display.launch.py              # RViz with joint sliders
 ros2 launch lite3_description description.launch.py namespace:=robot camera:=rtsp lidar:=mid360
 ```
+
+## Launch
+
+`description.launch.py` (`robot_state_publisher`, also takes `namespace`, default `robot`) and
+`display.launch.py` (adds RViz and, with `gui:=true` (default), joint sliders):
 
 | Argument | Values | |
 |---|---|---|
