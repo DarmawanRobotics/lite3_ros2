@@ -1,0 +1,25 @@
+# rtsp_camera: the Lite3's wide-angle front camera over RTSP (document 1.2.11: the stream is
+# rtsp://<motion host>:8554/test, i.e. 192.168.1.120 or 192.168.2.1).
+rtsp_camera:
+  ros__parameters:
+    url: rtsp://192.168.1.120:8554/test
+    codec: h264                       # h264 | h265
+    decoder: auto                     # auto (jetson, software, ffmpeg) | jetson | software | ffmpeg
+    latency_ms: 0                     # rtspsrc jitter buffer; raise it on a lossy link
+    protocols: tcp                    # tcp is robust over Wi-Fi; udp has less delay
+    width: 0                          # 0: the stream's own size; else frames are resized
+    height: 0
+    max_fps: 15.0                     # frames handled per second (0: all)
+    frame_id: camera_color_optical_frame
+    # camera_calibration YAML (ros2 run camera_calibration cameracalibrator ...). With it the
+    # published image is rectified and camera_info has no distortion; without it camera_info
+    # assumes default_hfov_deg and AprilTag poses are approximate.
+    calibration_file: ""
+    alpha: 0.0                        # 0: crop to valid pixels, 1: keep every source pixel
+    default_hfov_deg: 120.0
+    publish_raw: true                 # image_raw (bgr8): the tag detector, people, WebRTC
+    publish_compressed: true          # image_raw/compressed (JPEG): handheld, dashboard
+    jpeg_quality: 75
+    compressed_fps: 10.0
+    latency_sec: 0.1                  # stamp = receive time - this (decode + network)
+    reconnect_sec: 2.0

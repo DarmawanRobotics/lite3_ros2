@@ -1,0 +1,26 @@
+# Example of the camera_calibration format read by calibration_file. Replace every number with
+# the result of a calibration of YOUR camera:
+#   ros2 run camera_calibration cameracalibrator --size 8x6 --square 0.025 \
+#     --ros-args -r image:=/camera/camera/color/image_raw -p camera:=/camera/camera/color
+# (publish_raw true, calibration_file "" while calibrating). For a strong fisheye use
+# --fisheye-k-coefficients and distortion_model equidistant.
+image_width: 1280
+image_height: 720
+camera_name: lite3_front
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [640.0, 0.0, 639.5, 0.0, 640.0, 359.5, 0.0, 0.0, 1.0]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [-0.30, 0.09, 0.0, 0.0, -0.01]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [640.0, 0.0, 639.5, 0.0, 0.0, 640.0, 359.5, 0.0, 0.0, 0.0, 1.0, 0.0]
