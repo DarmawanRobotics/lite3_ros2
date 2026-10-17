@@ -5,13 +5,21 @@ ROS 2 driver of the Deep Robotics Jueying Lite3. It speaks the motion host's UDP
 state report and the 100 Hz joint reports as ROS topics, every robot command as a
 `std_srvs/Trigger` service, and gestures that block until the robot is done.
 
+## Nodes
+
+| Node | Executable | |
+|---|---|---|
+| `lite3_driver` | `driver_node` | UDP link to the motion host, ROS topics and services |
+
+## Usage
+
 ```bash
 ros2 launch lite3_driver driver.launch.py namespace:=robot
 ros2 topic echo /robot/state
 ros2 service call /robot/stand_up std_srvs/srv/Trigger
 ```
 
-## Interfaces (in the launch namespace, `robot` by default)
+## Topics (in the launch namespace, `robot` by default)
 
 | | Name | Type | |
 |---|---|---|---|
@@ -24,7 +32,7 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 | pub | `state` | `lite3_interfaces/RobotState` | basic state, gait, motion, battery, ultrasound, link, control mode, gesture |
 | pub | `diagnostics` | `diagnostic_msgs/DiagnosticArray` | ERROR without state reports, WARN on protection, lost balance, low battery |
 
-**Services** (`std_srvs/Trigger`):
+## Services (`std_srvs/Trigger`)
 
 | Service | Sends | Notes |
 |---|---|---|
@@ -54,8 +62,7 @@ obeys them in navigation mode: with `auto_navigation_mode` the driver sends `0x2
 motion starts after an idle stream, and every `mode_refresh_sec` while moving. When `cmd_vel`
 goes quiet for `cmd_timeout_sec` the driver sends zeros for `stop_burst_sec`, then nothing.
 
-If the robot turns or strafes the wrong way, set `invert_wz` / `invert_vy` (checklist in the
-repository README).
+If the robot turns or strafes the wrong way, set `invert_wz` / `invert_vy` ([Verify on the real robot](../README.md#verify-on-the-real-robot)).
 
 ## State report layouts
 
@@ -83,6 +90,17 @@ read as 0–1 or as a percentage.
 | `state_timeout_sec` | 1.0 | no report for this long: disconnected |
 | `low_battery` | 0.2 | diagnostics warn below |
 | `gesture.*` | | keyframe amplitudes and timing, hello timeouts |
+
+## Launch
+
+`launch/driver.launch.py`:
+
+| Argument | Default | |
+|---|---|---|
+| `namespace` | `robot` | topics and services |
+| `params_file` | [config/driver_params.yaml](config/driver_params.yaml) | a copy with this robot's settings |
+
+The full robot (URDF, LiDAR, camera) starts from [lite3_bringup](../lite3_bringup/README.md).
 
 ## Test
 
