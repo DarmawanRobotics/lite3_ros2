@@ -1,0 +1,102 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Vendor drivers that need SDKs or hardware, and GUI-only tools; CI builds and tests the
+  # lite3 packages.
+  ROSDEP_SKIP: >-
+    livox_ros_driver2 realsense2_camera rviz2 joint_state_publisher_gui
+
+jobs:
+  scripts:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S warning lite3_bringup/scripts/*.sh
+      - name: YAML, JSON and XML parse
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys, xml.dom.minidom, yaml
+          bad = []
+          for p in pathlib.Path('.').rglob('*'):
+              if '.git' in p.parts or not p.is_file():
+                  continue
+              try:
+                  if p.suffix in ('.yaml', '.yml', '.rviz'):
+                      yaml.safe_load(p.read_text())
+                  elif p.suffix == '.json':
+                      json.loads(p.read_text())
+                  elif p.suffix in ('.xml', '.xacro'):
+                      xml.dom.minidom.parse(str(p))
+              except Exception as e:  # noqa: B902
+                  bad.append(f'{p}: {e}')
+          print('\n'.join(bad) or 'all files parse')
+          sys.exit(1 if bad else 0)
+          PY
+
+  build-test:
+    runs-on: ubuntu-22.04
+    container: ros:humble-ros-base-jammy
+    env:
+      ROS_LOCALHOST_ONLY: '1'
+      PYTHONUNBUFFERED: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/lite3_ros2
+      - name: Dependencies
+        run: |
+          apt-get update
+          rosdep update --rosdistro humble
+          rosdep install --from-paths src --ignore-src -y --rosdistro humble \
+            --skip-keys "$ROSDEP_SKIP"
+      - name: Build
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --event-handlers console_cohesion+
+      - name: Test
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          # sequential: the in-process ROS tests share one DDS domain
+          colcon test --executor sequential --event-handlers console_cohesion+
+          if ! colcon test-result --verbose > test-result.txt 2>&1; then
+            cat test-result.txt
+            # the failures as one annotation too: on the run page and through the API
+            msg=$(head -c 30000 test-result.txt \
+              | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
+            echo "::error title=Failing tests::$msg"
+            exit 1
+          fi
+          cat test-result.txt
+      - name: Launch smoke test
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+          ros2 launch lite3_bringup bringup.launch.py --show-args > /dev/null
+          ros2 launch lite3_driver driver.launch.py --show-args > /dev/null
+          ros2 launch lite3_description description.launch.py --show-args > /dev/null
+          for camera in rtsp realsense none; do
+            xacro "$(ros2 pkg prefix lite3_description)/share/lite3_description/urdf/lite3.urdf.xacro" \
+              camera:=$camera > /dev/null
+          done
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: build/*/test_results/**/*.xml
+          if-no-files-found: ignore
