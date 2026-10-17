@@ -1,6 +1,7 @@
 # rtsp_camera: the Lite3's wide-angle front camera over RTSP (document 1.2.11: the stream is
-# rtsp://<motion host>:8554/test, i.e. 192.168.1.120 or 192.168.2.1).
-rtsp_camera:
+# rtsp://<motion host>:8554/test, i.e. 192.168.1.120 or 192.168.2.1). "/**" matches the node in
+# any namespace and under any name (lite3_bringup calls it front_camera).
+/**:
   ros__parameters:
     url: rtsp://192.168.1.120:8554/test
     codec: h264                       # h264 | h265

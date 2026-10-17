@@ -19,7 +19,8 @@ the robot package contract wants it.
   (`nvv4l2decoder`), then software (`avdec_h264`, gstreamer1.0-libav), then OpenCV's FFmpeg
   reader; the one that worked is tried first on every reconnect. The appsink keeps only the
   newest frame, so a slow consumer never builds up delay.
-- **Reconnects** every `reconnect_sec` when the stream cannot be opened or drops.
+- **Reconnects** when the stream cannot be opened or drops: after `reconnect_sec`, doubling up
+  to 30 s while it keeps failing (OpenCV logs every failed attempt).
 - **Rectification**: with `calibration_file` (camera_calibration YAML, `plumb_bob`,
   `rational_polynomial` or fisheye `equidistant`) the published image is undistorted and
   `camera_info` describes the ideal pinhole camera (no distortion), which is what the AprilTag

@@ -20,6 +20,8 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 
+RECONNECT_MAX_SEC = 30.0
+
 
 class RtspCameraNode(Node):
     """One RTSP stream as a ROS camera."""
@@ -118,19 +120,20 @@ class RtspCameraNode(Node):
         return None
 
     def capture_loop(self):
-        """Read frames until stopped; reconnect when the stream drops."""
-        warned = False
+        """Read frames until stopped; reconnect when the stream drops, backing off to 30 s."""
+        delay = self._reconnect
         while self._running.is_set():
             capture = self.open_stream()
             if capture is None:
-                if not warned:
+                if delay == self._reconnect:
                     self.get_logger().warn(
-                        f'cannot open {self._url}, retrying every {self._reconnect:.0f} s'
+                        f'cannot open {self._url}, retrying (every {self._reconnect:.0f} s, '
+                        f'up to {RECONNECT_MAX_SEC:.0f} s while it keeps failing)'
                     )
-                    warned = True
-                time.sleep(self._reconnect)
+                self.pause(delay)
+                delay = min(delay * 2.0, RECONNECT_MAX_SEC)
                 continue
-            warned = False
+            delay = self._reconnect
             while self._running.is_set():
                 ok, frame = capture.read()
                 if not ok or frame is None:
@@ -138,7 +141,13 @@ class RtspCameraNode(Node):
                     break
                 self.process_frame(frame)
             capture.release()
-            time.sleep(min(self._reconnect, 1.0))
+            self.pause(min(self._reconnect, 1.0))
+
+    def pause(self, seconds: float):
+        """Sleep, but wake up at once when the node stops."""
+        end = time.monotonic() + seconds
+        while self._running.is_set() and time.monotonic() < end:
+            time.sleep(0.1)
 
     def process_frame(self, frame: np.ndarray):
         """Resize, rectify and publish one BGR frame."""
