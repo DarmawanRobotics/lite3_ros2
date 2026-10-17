@@ -1,6 +1,7 @@
 # lite3_driver: the Lite3 motion host over UDP (Deep Robotics "UDP Commands" V1.1.0).
-# The node name below must match the launch (lite3_driver); it runs in the robot namespace.
-lite3_driver:
+# "/**" matches the driver in any namespace and under any node name (a bare "lite3_driver:"
+# would not match /robot/lite3_driver).
+/**:
   ros__parameters:
     # Network: commands go to the motion host's port 43893. Its reports (state 50 Hz, joints
     # 100 Hz) only reach this computer when its IP and local_port are listed in
