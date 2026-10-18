@@ -16,6 +16,10 @@ versions follow [SemVer](https://semver.org).
   and a stream still running when the robot stood up drove it off at once.
 - `lite3_driver`: a `cmd_vel` with NaN or inf in any field is a stop; before, only that component
   was dropped and the rest was executed.
+- `lite3_driver`: `emergency_stop` during a gesture no longer lets the gesture put the robot
+  back (neutral pose, move and navigation mode, `hello`'s stand-up); no gesture runs while
+  `cmd_vel` is held (except `hello` on a sitting robot); `stand_up`, `sit_down` and `save_data`
+  are refused while a gesture runs.
 - `lite3_driver`: the navigation mode repeats follow the first one at once instead of waiting
   for the next motion of the same stream, and a hold no longer starts a new stream (navigation
   mode after `sit_down` / `stand_up` only once `cmd_vel` was quiet; `manual_mode` survives it).

@@ -36,8 +36,8 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 
 | Service | Sends | Notes |
 |---|---|---|
-| `stand_up`, `sit_down` | stand/sit toggle `0x21010202` | state aware: nothing to do when already there, refused while walking or in a transition; `sit_down` holds `cmd_vel`, `stand_up` releases it |
-| `emergency_stop` | soft e-stop `0x21020C0E`, sent three times | holds `cmd_vel` (zeros, then nothing) until `stand_up`, stops a gesture |
+| `stand_up`, `sit_down` | stand/sit toggle `0x21010202` | state aware: nothing to do when already there, refused while walking, in a transition or during a gesture; `sit_down` holds `cmd_vel`, `stand_up` releases it |
+| `emergency_stop` | soft e-stop `0x21020C0E`, sent three times | holds `cmd_vel` (zeros, then nothing) until `stand_up`; ends a gesture without putting the robot back (no pose, mode or stand-up commands after it) |
 | `navigation_mode`, `manual_mode` | `0x21010C03`, `0x21010C02` | navigation: speed commands are obeyed; manual: the remote drives |
 | `move_mode`, `pose_mode` | `0x21010D06`, `0x21010D05` | |
 | `gait_slow`, `gait_medium`, `gait_fast`, `gait_crawl` | flat gaits `0x21010300`, `0x21010307`, `0x21010303`, `0x21010406` | not in AI state |
@@ -46,12 +46,13 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 | `stop_action` | `0x21010C0B` with value 0 and 1 | |
 | `keep_stepping_on`, `keep_stepping_off` | `0x21010C06` -1 / 2 | |
 | `speaker_on`, `speaker_off` | `0x2101030D` 1 / 0 | |
-| `save_data` | `0x21010C01` | saves 100 s of data, then the robot soft-stops and **quits its motion program**; holds `cmd_vel` until `stand_up` |
+| `save_data` | `0x21010C01` | saves 100 s of data, then the robot soft-stops and **quits its motion program**; holds `cmd_vel` until `stand_up`; refused during a gesture |
 | `hello` | `0x21010507` | sits down first when standing (the action needs sitting), waves, stands up again; blocks until done |
 | `nod`, `bow`, `look_left`, `look_right` | pose-mode axis keyframes | standing still only; manual + pose mode while it runs, move (and navigation) mode after; blocks until done |
 
 Gesture services run on their own callback group: the driver keeps streaming and publishing
-while one runs. Any non-zero `cmd_vel` stops a running gesture.
+while one runs. Any non-zero `cmd_vel` stops a running gesture. While `cmd_vel` is held (after
+`emergency_stop`, `sit_down` or `save_data`) no gesture runs, except `hello` on a sitting robot.
 
 ## Velocity
 

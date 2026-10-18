@@ -6,7 +6,7 @@ from lite3_driver.gestures import GestureConfig, GestureRunner, keyframes
 import pytest
 
 
-def runner(robot, moving=False, connected=True, config=None):
+def runner(robot, moving=False, connected=True, config=None, held=None):
     """Return a runner wired to the fake robot and a fake clock."""
     clock = FakeClock(robot)
     return GestureRunner(
@@ -17,6 +17,7 @@ def runner(robot, moving=False, connected=True, config=None):
         moving=lambda: moving,
         clock=clock.time,
         sleep=clock.sleep,
+        held=held,
     )
 
 
@@ -96,3 +97,51 @@ def test_abort_ends_a_gesture_in_move_mode():
     ok, message = gesture.run('bow', control_mode='manual')
     assert not ok and 'stopped early' in message
     assert robot.mode == 'move'
+
+
+def abort_after(gesture, robot, sends, restore):
+    """Abort the gesture after a number of datagrams; return the codes sent after the abort."""
+    calls = {'n': 0, 'at': None}
+    original = robot.send
+
+    def send(data):
+        calls['n'] += 1
+        if calls['n'] == sends:
+            gesture.abort(restore=restore)
+            calls['at'] = len(robot.sent) + 1
+        return original(data)
+
+    gesture._send = send
+    return calls
+
+
+def test_the_emergency_stop_aborts_a_pose_gesture_without_restoring():
+    """abort(restore=False): no neutral pose, move mode or navigation mode after it."""
+    robot = FakeRobot()
+    gesture = runner(robot)
+    calls = abort_after(gesture, robot, 20, restore=False)
+    ok, message = gesture.run('bow', control_mode='navigation')
+    assert not ok and 'emergency stop' in message
+    after = robot.codes()[calls['at']:]
+    assert not set(after) & {p.MOVE_MODE, p.NAVIGATION_MODE, p.AXIS_PITCH, p.AXIS_YAW}
+
+
+def test_the_emergency_stop_during_hello_does_not_stand_the_robot_up():
+    """An emergency stop while hello sits down: no wave, no stand up, no navigation mode."""
+    robot = FakeRobot(p.STATE_STANDING)
+    gesture = runner(robot)
+    abort_after(gesture, robot, 1, restore=False)  # right after the sit toggle
+    ok, message = gesture.run('hello', control_mode='navigation')
+    assert not ok and 'emergency stop' in message
+    assert robot.codes() == [p.STAND_SIT]
+
+
+def test_no_gesture_while_cmd_vel_is_held():
+    """Held by emergency_stop or save_data: nothing; held by sit_down: hello while sitting only."""
+    assert 'held by emergency_stop' in runner(
+        FakeRobot(), held=lambda: 'emergency_stop').run('nod', 'manual')[1]
+    assert 'held by sit_down' in runner(
+        FakeRobot(p.STATE_STANDING), held=lambda: 'sit_down').run('hello', 'manual')[1]
+    robot = FakeRobot(p.STATE_SITTING)
+    ok, _ = runner(robot, held=lambda: 'sit_down').run('hello', control_mode='manual')
+    assert ok and robot.codes() == [p.ACTION_HELLO]

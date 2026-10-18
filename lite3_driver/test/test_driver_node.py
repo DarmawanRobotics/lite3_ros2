@@ -283,6 +283,37 @@ def test_a_running_stream_never_drives_after_emergency_stop(rig):
         streamer.join(timeout=1.0)
 
 
+def test_the_emergency_stop_ends_a_gesture_without_restoring_it(rig):
+    """emergency_stop during bow: nothing but zeros after the soft e-stop, no mode commands."""
+    stop = threading.Event()
+
+    def keep_reporting():
+        while not stop.is_set():
+            rig.host.report(rig.port, standing_report(vel_body=(0.0, 0.0, 0.0)))
+            time.sleep(0.02)
+
+    reporter = threading.Thread(target=keep_reporting, daemon=True)
+    reporter.start()
+    try:
+        assert wait_for(lambda: rig.node.connected())
+        result = {}
+        gesture = threading.Thread(target=lambda: result.update(answer=rig.call('bow')))
+        gesture.start()
+        assert wait_for(lambda: rig.node._runner.active == 'bow')
+        time.sleep(0.3)
+        assert rig.call('sit_down').message == 'busy with bow'
+        assert rig.call('emergency_stop').success
+        gesture.join(timeout=10.0)
+        assert not result['answer'].success and 'emergency stop' in result['answer'].message
+        estop = min(t for t, d in list(rig.host.received) if d and d.code == p.SOFT_ESTOP)
+        modes = {p.MOVE_MODE, p.NAVIGATION_MODE, p.POSE_MODE, p.MANUAL_MODE, p.STAND_SIT}
+        assert not set(rig.host.codes(estop)) & modes
+        assert 'held by emergency_stop' in rig.call('nod').message
+    finally:
+        stop.set()
+        reporter.join(timeout=1.0)
+
+
 def test_stand_up_and_sit_down_follow_the_state(rig):
     """Stand up toggles only from sitting; sit down is refused without state."""
     assert not rig.call('sit_down').success  # no state yet

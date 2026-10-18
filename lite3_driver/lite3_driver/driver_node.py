@@ -154,6 +154,7 @@ class Lite3DriverNode(Node):
                                                        gesture_config.quiet_sec),
             clock=time.monotonic,
             sleep=time.sleep,
+            held=lambda: self._policy.hold_reason,
         )
 
         # reliable everywhere: reliable publishers also reach best-effort subscribers (RViz,
@@ -300,7 +301,9 @@ class Lite3DriverNode(Node):
     def on_stand_up(self, _request, response):
         """Stand up from sitting; nothing to do when already standing."""
         report = self.latest_report()
-        if report is None or not self.connected():
+        if self._runner.active:
+            response.success, response.message = False, f'busy with {self._runner.active}'
+        elif report is None or not self.connected():
             response.success, response.message = False, 'no state from the motion host'
         elif report.standing:
             response.success, response.message = True, 'already standing'
@@ -317,7 +320,9 @@ class Lite3DriverNode(Node):
     def on_sit_down(self, _request, response):
         """Sit down from standing, never while walking."""
         report = self.latest_report()
-        if report is None or not self.connected():
+        if self._runner.active:
+            response.success, response.message = False, f'busy with {self._runner.active}'
+        elif report is None or not self.connected():
             response.success, response.message = False, 'no state from the motion host'
         elif report.sitting:
             response.success, response.message = True, 'already sitting'
@@ -336,7 +341,7 @@ class Lite3DriverNode(Node):
     def on_emergency_stop(self, _request, response):
         """Hold the velocity until stand_up, stop any gesture, send the soft emergency stop."""
         self._policy.hold('emergency_stop', time.monotonic())
-        self._runner.abort()
+        self._runner.abort(restore=False)  # no neutral pose, mode or standing up after it
         self._link.send_all(self._policy.speeds(0.0, 0.0, 0.0))
         # three times: one lost UDP datagram must not lose the stop
         response.success = self.send_commands(((p.SOFT_ESTOP, 0),) * ESTOP_REPEATS)
@@ -362,6 +367,10 @@ class Lite3DriverNode(Node):
                 response.success, response.message = False, 'sit down first'
                 return response
             if name == 'save_data':
+                if self._runner.active:
+                    response.success = False
+                    response.message = f'busy with {self._runner.active}'
+                    return response
                 self._policy.hold('save_data', time.monotonic())  # the motion program quits
             response.success = self.send_commands(datagrams)
             if response.success and name in MODES:
