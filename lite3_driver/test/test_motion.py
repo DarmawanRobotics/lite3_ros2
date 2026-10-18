@@ -28,12 +28,13 @@ def test_silent_before_the_first_command():
 
 
 def test_fresh_command_streams_with_navigation_mode_first():
-    """A new motion asks for navigation mode, then streams the three speeds as-is (REP-103)."""
+    """A new motion asks for navigation mode, then streams the speeds in the robot's signs."""
     policy = VelocityPolicy(VelocityConfig())
     policy.command(0.3, 0.1, 0.5, now=0.0)
     first = policy.tick(0.0)
     assert codes(first) == [p.NAVIGATION_MODE, p.SPEED_VX, p.SPEED_VY, p.SPEED_WZ]
-    assert speeds(first) == {p.SPEED_VX: 0.3, p.SPEED_VY: 0.1, p.SPEED_WZ: 0.5}
+    # +angular.z (counter-clockwise) goes out negative: the motion host turns right for positive
+    assert speeds(first) == {p.SPEED_VX: 0.3, p.SPEED_VY: 0.1, p.SPEED_WZ: -0.5}
     assert codes(policy.tick(0.05)) == [p.SPEED_VX, p.SPEED_VY, p.SPEED_WZ]
     policy.command(0.3, 0.0, 0.0, now=2.0)
     assert p.NAVIGATION_MODE in codes(policy.tick(2.0))  # refreshed while moving
@@ -64,6 +65,8 @@ def test_limits_and_non_finite_values():
     policy.command(5.0, -5.0, float('nan'), now=0.0)
     assert policy.current == (0.6, -0.5, 0.0)
     assert speeds(policy.tick(0.0)) == {p.SPEED_VX: 0.6, p.SPEED_VY: -0.5, p.SPEED_WZ: 0.0}
+    policy.command(0.0, 0.0, -3.0, now=1.0)
+    assert speeds(policy.tick(1.0))[p.SPEED_WZ] == 1.0  # clockwise, clamped to 1.0
 
 
 def test_inversions_for_a_robot_that_disagrees():
@@ -71,7 +74,7 @@ def test_inversions_for_a_robot_that_disagrees():
     policy = VelocityPolicy(VelocityConfig(invert_vy=True, invert_wz=True))
     policy.command(0.1, 0.2, 0.3, now=0.0)
     sent = speeds(policy.tick(0.0))
-    assert sent[p.SPEED_VY] == -0.2 and sent[p.SPEED_WZ] == -0.3
+    assert sent[p.SPEED_VY] == -0.2 and sent[p.SPEED_WZ] == 0.3  # wz back to REP-103's sign
     assert policy.current == (0.1, 0.2, 0.3)
 
 

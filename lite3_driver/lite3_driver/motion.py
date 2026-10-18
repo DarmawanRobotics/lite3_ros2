@@ -8,6 +8,7 @@ from lite3_driver import protocol as p
 
 EPSILON = 1e-3
 NAVIGATION_DATAGRAM = p.simple(p.NAVIGATION_MODE)
+WZ_SIGN = -1.0  # REP-103 counter-clockwise -> the motion host's positive = turn right
 
 
 @dataclass
@@ -111,10 +112,16 @@ class VelocityPolicy:
         return []
 
     def speeds(self, vx: float, vy: float, wz: float) -> List[bytes]:
-        """Encode the three speed commands, with the optional sign inversions."""
+        """Encode the three speed commands in the motion host's signs.
+
+        x forward and y left are sent as they are. The motion host turns right for a positive
+        angular speed, as for its axis commands: Deep Robotics' own bridge (Lite3_ROS,
+        transfer/Jetson2Motion.cpp) sends -angular.z, so the counter-clockwise +z of REP-103 is
+        negated here. invert_vy / invert_wz flip a sign that turns out wrong on a robot.
+        """
         c = self.config
         return [
             p.speed(p.SPEED_VX, vx),
             p.speed(p.SPEED_VY, -vy if c.invert_vy else vy),
-            p.speed(p.SPEED_WZ, -wz if c.invert_wz else wz),
+            p.speed(p.SPEED_WZ, wz * WZ_SIGN * (-1.0 if c.invert_wz else 1.0)),
         ]

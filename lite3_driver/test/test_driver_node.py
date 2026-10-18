@@ -186,7 +186,7 @@ def test_cmd_vel_streams_speeds_then_zeros_then_silence(rig):
     for _ in range(10):
         rig.cmd.publish(Twist(linear=Vector3(x=0.2, y=0.1), angular=Vector3(z=0.3)))
         time.sleep(0.05)
-    assert wait_for(lambda: (p.SPEED_WZ, 0.3) in rig.host.speeds(start))
+    assert wait_for(lambda: (p.SPEED_WZ, -0.3) in rig.host.speeds(start))  # robot: + turns right
     assert p.NAVIGATION_MODE in rig.host.codes(start)
     assert (p.SPEED_VX, 0.2) in rig.host.speeds(start)
     assert (p.SPEED_VY, 0.1) in rig.host.speeds(start)
