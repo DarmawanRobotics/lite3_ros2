@@ -30,14 +30,14 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 | pub | `joint_states` | `sensor_msgs/JointState` | `FL_HipX_joint` ... `HR_Knee_joint` (the official model's names): angles and velocities |
 | pub | `ultrasound/front`, `ultrasound/rear` | `sensor_msgs/Range` | 0.28–4.5 m, frames `ultrasound_front`, `ultrasound_rear` |
 | pub | `state` | `lite3_interfaces/RobotState` | basic state, gait, motion, battery, ultrasound, link, control mode, gesture |
-| pub | `diagnostics` | `diagnostic_msgs/DiagnosticArray` | ERROR without state reports, WARN on protection, lost balance, low battery |
+| pub | `diagnostics` | `diagnostic_msgs/DiagnosticArray` | ERROR without state reports, WARN on protection, lost balance, low battery, and while `cmd_vel` asks for motion that is held back (`velocity`) |
 
 ## Services (`std_srvs/Trigger`)
 
 | Service | Sends | Notes |
 |---|---|---|
-| `stand_up`, `sit_down` | stand/sit toggle `0x21010202` | state aware: nothing to do when already there, refused while walking or in a transition |
-| `emergency_stop` | soft e-stop `0x21020C0E`, sent three times | also zeroes the velocity and stops a gesture |
+| `stand_up`, `sit_down` | stand/sit toggle `0x21010202` | state aware: nothing to do when already there, refused while walking or in a transition; `sit_down` holds `cmd_vel`, `stand_up` releases it |
+| `emergency_stop` | soft e-stop `0x21020C0E`, sent three times | holds `cmd_vel` (zeros, then nothing) until `stand_up`, stops a gesture |
 | `navigation_mode`, `manual_mode` | `0x21010C03`, `0x21010C02` | navigation: speed commands are obeyed; manual: the remote drives |
 | `move_mode`, `pose_mode` | `0x21010D06`, `0x21010D05` | |
 | `gait_slow`, `gait_medium`, `gait_fast`, `gait_crawl` | flat gaits `0x21010300`, `0x21010307`, `0x21010303`, `0x21010406` | not in AI state |
@@ -46,7 +46,7 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 | `stop_action` | `0x21010C0B` with value 0 and 1 | |
 | `keep_stepping_on`, `keep_stepping_off` | `0x21010C06` -1 / 2 | |
 | `speaker_on`, `speaker_off` | `0x2101030D` 1 / 0 | |
-| `save_data` | `0x21010C01` | saves 100 s of data, then the robot soft-stops and **quits its motion program** |
+| `save_data` | `0x21010C01` | saves 100 s of data, then the robot soft-stops and **quits its motion program**; holds `cmd_vel` until `stand_up` |
 | `hello` | `0x21010507` | sits down first when standing (the action needs sitting), waves, stands up again; blocks until done |
 | `nod`, `bow`, `look_left`, `look_right` | pose-mode axis keyframes | standing still only; manual + pose mode while it runs, move (and navigation) mode after; blocks until done |
 
@@ -62,6 +62,12 @@ value (like its axis commands): Deep Robotics' own ROS 2 bridge
 ([Lite3_ROS](https://github.com/DeepRoboticsLab/Lite3_ROS), `Jetson2Motion.cpp`) sends
 `-angular.z` too. When `cmd_vel` goes quiet for `cmd_timeout_sec` the driver sends zeros for
 `stop_burst_sec`, then nothing.
+
+`emergency_stop`, `sit_down` and `save_data` hold the velocity: zeros for `stop_burst_sec`, then
+nothing, whatever `cmd_vel` says, until `stand_up`. After `stand_up` motion is sent again only
+once `cmd_vel` has been zero or quiet, so a stream that kept running during the stop never drives
+the robot off. `diagnostics` shows the gate (`velocity`: `ok`, `hold:<service>`, `waiting for zero
+or quiet cmd_vel`) and turns WARN while motion is asked for and held back.
 
 The robot only obeys speed commands in navigation mode. With `auto_navigation_mode` the driver
 sends `0x21010C03` when motion starts after an idle stream, `mode_repeats` times

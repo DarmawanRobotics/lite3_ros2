@@ -115,16 +115,54 @@ def test_inversions_for_a_robot_that_disagrees():
     assert policy.current == (0.1, 0.2, 0.3)
 
 
-def test_stop_and_motion_memory():
-    """stop() zeroes at once; recently_moved remembers the last motion."""
+def test_hold_and_motion_memory():
+    """hold() zeroes at once; recently_moved remembers the last motion that was sent."""
     policy = VelocityPolicy(VelocityConfig())
     policy.command(0.4, 0.0, 0.0, now=0.0)
     assert policy.moving(0.1) and policy.recently_moved(0.5, 1.0)
-    policy.stop(0.2)
+    policy.hold('emergency_stop', 0.2)
     assert not policy.moving(0.2)
     assert speeds(policy.tick(0.2))[p.SPEED_VX] == 0.0
+    policy.command(0.4, 0.0, 0.0, now=0.3)  # held: not sent, not remembered
     assert not policy.recently_moved(1.5, 1.0)
-    assert policy.sent_command(5.0) == (0.0, 0.0, 0.0)
+    assert policy.sent_command(0.3) == (0.0, 0.0, 0.0)
+
+
+def test_a_hold_ignores_a_running_stream_until_release_and_a_zero():
+    """After emergency_stop or sit_down a stream that keeps running never drives the robot."""
+    policy = VelocityPolicy(VelocityConfig(cmd_timeout_sec=0.5, stop_burst_sec=0.5))
+    policy.command(0.3, 0.0, 0.0, now=0.0)
+    assert speeds(policy.tick(0.0))[p.SPEED_VX] == 0.3
+    policy.hold('emergency_stop', 0.1)
+    assert policy.gate == 'hold:emergency_stop'
+    sent = []
+    for i in range(2, 60):  # the stream goes on for 6 s
+        now = i * 0.1
+        policy.command(0.3, 0.0, 0.0, now=now)
+        sent += policy.tick(now)
+    assert set(speeds(sent).values()) == {0.0}  # only the stop burst
+    assert codes(policy.tick(5.95)) == []
+    policy.release()  # stand_up
+    policy.command(0.3, 0.0, 0.0, now=6.0)
+    assert policy.tick(6.0) == []  # still the old stream: no drive-off
+    assert policy.gate.startswith('waiting')
+    policy.command(0.0, 0.0, 0.0, now=6.1)  # the commander stopped once
+    assert policy.gate == 'ok'
+    policy.command(0.3, 0.0, 0.0, now=6.2)
+    first = policy.tick(6.2)
+    assert codes(first)[0] == p.NAVIGATION_MODE and speeds(first)[p.SPEED_VX] == 0.3
+
+
+def test_a_quiet_stream_after_the_release_also_rearms():
+    """cmd_vel that went quiet after stand_up counts like a zero."""
+    policy = VelocityPolicy(VelocityConfig(cmd_timeout_sec=0.5, stop_burst_sec=0.5))
+    policy.command(0.3, 0.0, 0.0, now=0.0)
+    policy.hold('sit_down', 0.0)
+    policy.release()
+    assert set(speeds(policy.tick(0.2)).values()) == {0.0}  # the stop burst
+    assert policy.tick(1.2) == []  # quiet: armed again
+    policy.command(0.2, 0.0, 0.0, now=2.0)
+    assert speeds(policy.tick(2.0))[p.SPEED_VX] == 0.2
 
 
 @pytest.mark.parametrize('auto', [True, False])

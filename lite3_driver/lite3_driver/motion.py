@@ -51,6 +51,9 @@ class VelocityPolicy:
         self._mode_sent: Optional[float] = None
         self._mode_count = 0
         self._manual_hold = False
+        self._hold: Optional[str] = None  # set by emergency_stop, sit_down, save_data
+        self._armed = True  # False after a hold until cmd_vel was zero or quiet once
+        self._burst_until: Optional[float] = None
 
     def limits(self) -> Tuple[float, float, float]:
         """Return the effective limits: the configured ones within the protocol's ranges."""
@@ -66,17 +69,47 @@ class VelocityPolicy:
         lx, ly, lw = self.limits()
         self._cmd = (clamp(vx, lx), clamp(vy, ly), clamp(wz, lw))
         self._stamp = now
-        if is_motion(self._cmd):
+        if not is_motion(self._cmd):
+            if self._hold is None:
+                self._armed = True  # a zero command: what follows is no stale stream
+        elif self.driving:
             self._last_motion = now
+
+    @property
+    def driving(self) -> bool:
+        """Return True when a motion command would be sent: no hold, armed."""
+        return self._hold is None and self._armed
+
+    @property
+    def gate(self) -> str:
+        """Return why motion is or is not sent: ok, hold:<reason> or waiting for a zero cmd_vel."""
+        if self._hold is not None:
+            return f'hold:{self._hold}'
+        return 'ok' if self._armed else 'waiting for zero or quiet cmd_vel'
+
+    def hold(self, reason: str, now: float):
+        """
+        Stop and ignore cmd_vel until release() and a zero or quiet cmd_vel after it.
+
+        Zeros go out for stop_burst_sec, then nothing: a stream that keeps running after an
+        emergency stop or a sit down never drives the robot.
+        """
+        self._hold = reason
+        self._armed = False
+        self._cmd = (0.0, 0.0, 0.0)
+        self._burst_until = now + self.config.stop_burst_sec
+        # the episode is over: the next motion after the release asks for navigation mode again
+        self._mode_sent = None
+        self._mode_count = 0
+        self._manual_hold = False
+
+    def release(self):
+        """End a hold; motion is sent again once cmd_vel has been zero or quiet."""
+        self._hold = None
 
     def hold_manual(self):
         """Send no navigation mode until the stream has gone idle (a manual takeover)."""
         self._manual_hold = True
-
-    def stop(self, now: float):
-        """Drop the current command; zeros are streamed until the stream runs out."""
-        self._cmd = (0.0, 0.0, 0.0)
-        self._stamp = now
 
     @property
     def current(self) -> Tuple[float, float, float]:
@@ -88,7 +121,7 @@ class VelocityPolicy:
         return self._stamp is not None and now - self._stamp <= self.config.cmd_timeout_sec
 
     def moving(self, now: float) -> bool:
-        """Return True while a fresh command asks for motion."""
+        """Return True while a fresh command asks for motion (sent or not)."""
         return self.fresh(now) and is_motion(self._cmd)
 
     def recently_moved(self, now: float, window: float) -> bool:
@@ -97,7 +130,7 @@ class VelocityPolicy:
 
     def sent_command(self, now: float) -> Tuple[float, float, float]:
         """Return what the stream sends now: the command, zeros, or zeros when silent."""
-        return self._cmd if self.fresh(now) else (0.0, 0.0, 0.0)
+        return self._cmd if self.fresh(now) and self.driving else (0.0, 0.0, 0.0)
 
     def tick(self, now: float) -> List[bytes]:
         """Return the datagrams for this period of the command timer."""
@@ -105,6 +138,13 @@ class VelocityPolicy:
         if self._stamp is None:
             return []
         age = now - self._stamp
+        if not self.driving:
+            if self._hold is None and age > c.cmd_timeout_sec + c.stop_burst_sec:
+                self._armed = True  # cmd_vel went quiet after the release
+            elif self._burst_until is not None and now <= self._burst_until:
+                return self.speeds(0.0, 0.0, 0.0)
+            else:
+                return []
         if age <= c.cmd_timeout_sec:
             out = []
             # Navigation mode goes out when motion starts after idle, mode_repeats times (UDP
