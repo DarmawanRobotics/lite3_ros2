@@ -89,8 +89,9 @@ class GestureRunner:
         moving: Callable[[], bool],
         clock: Callable[[], float],
         sleep: Callable[[float], None],
+        held: Optional[Callable[[], Optional[str]]] = None,
     ):
-        """Keep the injected I/O."""
+        """Keep the injected I/O; held() returns why cmd_vel is held, or None."""
         self.config = config
         self._send = send
         self._state = state
@@ -98,12 +99,21 @@ class GestureRunner:
         self._moving = moving
         self._clock = clock
         self._sleep = sleep
+        self._held = held or (lambda: None)
         self._abort = threading.Event()
+        self._no_restore = False
         self._busy = threading.Lock()
         self.active = ''
 
-    def abort(self):
-        """Ask the running gesture to stop at its next step."""
+    def abort(self, restore: bool = True):
+        """
+        Ask the running gesture to stop at its next step.
+
+        restore=False (the emergency stop) also skips putting the robot back: no neutral pose,
+        no mode commands and no standing up again after it.
+        """
+        if not restore:
+            self._no_restore = True
         self._abort.set()
 
     def check(self, name: str) -> Optional[str]:
@@ -117,6 +127,9 @@ class GestureRunner:
             return 'no state from the motion host yet'
         if self._moving() or report.stepping:
             return 'the robot is walking'
+        held = self._held()
+        if held and not (name == 'hello' and report.sitting):
+            return f'cmd_vel is held by {held}: call stand_up first'
         state = p.name_of(p.BASIC_STATES, report.basic_state)
         if name == 'hello':
             if not (report.standing or report.sitting):
@@ -130,10 +143,13 @@ class GestureRunner:
         if not self._busy.acquire(blocking=False):
             return False, f'busy with {self.active or "a gesture"}'
         try:
+            # clear first: an emergency stop from here on aborts, one before is a hold check()
+            # refuses
+            self._abort.clear()
+            self._no_restore = False
             reason = self.check(name)
             if reason:
                 return False, reason
-            self._abort.clear()
             self.active = name
             if name == 'hello':
                 return self._hello(control_mode)
@@ -146,21 +162,26 @@ class GestureRunner:
         """Stream the keyframes in pose mode, then back to move mode."""
         c = self.config
         period = 1.0 / max(1.0, c.rate_hz)
+        if self._abort.is_set():
+            return False, f'{name} stopped early'
         if c.use_manual_mode:
             self._send(p.simple(p.MANUAL_MODE))
         self._send(p.simple(p.POSE_MODE))
         aborted = False
         for frame in keyframes(name, c):
             end = self._clock() + frame.duration
-            while self._clock() < end:
-                if self._abort.is_set():
-                    aborted = True
-                    break
+            while self._clock() < end and not aborted:
                 for datagram in frame.datagrams():
+                    if self._abort.is_set():
+                        aborted = True
+                        break
                     self._send(datagram)
-                self._sleep(period)
+                else:
+                    self._sleep(period)
             if aborted:
                 break
+        if self._no_restore:
+            return False, f'{name} stopped by the emergency stop'
         for datagram in NEUTRAL.datagrams():
             self._send(datagram)
         self._send(p.simple(p.MOVE_MODE))
@@ -175,7 +196,7 @@ class GestureRunner:
             report = self._state()
             if report is not None and predicate(report):
                 return True
-            if self._clock() >= end or (abortable and self._abort.is_set()):
+            if self._clock() >= end or (abortable and self._abort.is_set()) or self._no_restore:
                 return False
             self._sleep(0.05)
 
@@ -188,6 +209,8 @@ class GestureRunner:
             if not self._wait(lambda r: r.sitting, c.sit_timeout_sec):
                 return self._restore(False, 'did not sit down for hello', was_standing,
                                      control_mode)
+        if self._abort.is_set():
+            return self._restore(False, 'hello stopped early', was_standing, control_mode)
         self._send(p.simple(p.ACTION_HELLO))
         if not self._wait(lambda r: r.basic_state == p.STATE_HELLO, c.hello_start_timeout_sec):
             return self._restore(False, 'hello did not start', was_standing, control_mode)
@@ -198,13 +221,21 @@ class GestureRunner:
     def _restore(self, ok: bool, message: str, was_standing: bool, control_mode: str):
         """Stand up again when the robot stood before, then restore the control mode."""
         c = self.config
+        stopped = (False, 'hello stopped by the emergency stop')
+        if self._no_restore:
+            return stopped
         report = self._state()
         if was_standing and (report is None or not report.standing):
             settled = self._wait(lambda r: r.sitting or r.standing, c.sit_timeout_sec, False)
+            if self._no_restore:
+                return stopped
             if settled and self._state().sitting:
                 self._send(p.simple(p.STAND_SIT))
             if not self._wait(lambda r: r.standing, c.stand_timeout_sec, abortable=False):
-                return False, f'{message}; did not stand up again'
+                return stopped if self._no_restore else (
+                    False, f'{message}; did not stand up again')
+        if self._no_restore:
+            return stopped
         if control_mode == 'navigation':
             self._send(p.simple(p.NAVIGATION_MODE))
         return ok, message

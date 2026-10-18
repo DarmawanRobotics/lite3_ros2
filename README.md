@@ -144,6 +144,8 @@ On a new robot, in an open area with someone at the remote:
   datagram); the remote and the robot's own stop button always work too.
 - Gestures only run while the robot stands still; any motion command stops them. `hello` makes
   a standing robot sit down first (the action needs sitting) and stand up again after.
+  `emergency_stop` ends a gesture without putting the robot back; while `cmd_vel` is held no
+  gesture runs (only `hello` on a sitting robot).
 - `save_data` makes the robot save its log, soft-stop and **quit its motion program**.
 - In SDK mode (Deep Robotics' `sdk_deploy`, switched on in the app) an RL policy replaces the
   motion program: this driver's commands do not apply until SDK mode is off again.

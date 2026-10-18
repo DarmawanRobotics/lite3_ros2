@@ -49,6 +49,7 @@ class VelocityPolicy:
         self._stamp: Optional[float] = None
         self._last_motion: Optional[float] = None
         self._mode_sent: Optional[float] = None
+        self._mode_first: Optional[float] = None
         self._mode_count = 0
         self._manual_hold = False
         self._hold: Optional[str] = None  # set by emergency_stop, sit_down, save_data
@@ -83,6 +84,11 @@ class VelocityPolicy:
         return self._hold is None and self._armed
 
     @property
+    def hold_reason(self) -> Optional[str]:
+        """Return the service that holds cmd_vel, or None."""
+        return self._hold
+
+    @property
     def gate(self) -> str:
         """Return why motion is or is not sent: ok, hold:<reason> or waiting for a zero cmd_vel."""
         if self._hold is not None:
@@ -100,10 +106,6 @@ class VelocityPolicy:
         self._armed = False
         self._cmd = (0.0, 0.0, 0.0)
         self._burst_until = now + self.config.stop_burst_sec
-        # the episode is over: the next motion after the release asks for navigation mode again
-        self._mode_sent = None
-        self._mode_count = 0
-        self._manual_hold = False
 
     def release(self):
         """End a hold; motion is sent again once cmd_vel has been zero or quiet."""
@@ -149,13 +151,10 @@ class VelocityPolicy:
                 return []
         if age <= c.cmd_timeout_sec:
             out = []
-            # Navigation mode goes out when motion starts after idle, mode_repeats times (UDP
-            # may drop one), and never again while the stream lasts: an operator who switches
-            # the robot to manual on the remote keeps it until the stream goes idle.
-            if (c.auto_navigation_mode and is_motion(self._cmd) and not self._manual_hold
-                    and self._mode_count < c.mode_repeats
-                    and (self._mode_sent is None or now - self._mode_sent >= c.mode_repeat_sec)):
+            if self._navigation_due(now):
                 out.append(NAVIGATION_DATAGRAM)
+                if self._mode_count == 0:
+                    self._mode_first = now
                 self._mode_sent = now
                 self._mode_count += 1
             return out + self.speeds(*self._cmd)
@@ -163,9 +162,28 @@ class VelocityPolicy:
             return self.speeds(0.0, 0.0, 0.0)
         # idle: the next motion asks for navigation mode again
         self._mode_sent = None
+        self._mode_first = None
         self._mode_count = 0
         self._manual_hold = False
         return []
+
+    def _navigation_due(self, now: float) -> bool:
+        """
+        Return True when navigation mode goes out in this period.
+
+        The first time when motion starts after a quiet stream; the other mode_repeats - 1
+        follow on their schedule right after it, zeros or not (a UDP datagram may get lost);
+        then never again until cmd_vel has gone quiet. The state report does not say which
+        mode the robot is in, so this is how an operator who switches it to manual on the
+        remote keeps it while cmd_vel streams.
+        """
+        c = self.config
+        if not c.auto_navigation_mode or self._manual_hold or self._mode_count >= c.mode_repeats:
+            return False
+        if self._mode_count == 0:
+            return is_motion(self._cmd)
+        return (now - self._mode_sent >= c.mode_repeat_sec
+                and now - self._mode_first <= c.mode_repeats * c.mode_repeat_sec)
 
     def speeds(self, vx: float, vy: float, wz: float) -> List[bytes]:
         """
