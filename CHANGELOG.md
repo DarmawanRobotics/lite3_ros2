@@ -5,6 +5,24 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Changed
+- `lite3_driver`: the yaw rate of `cmd_vel` goes out negated (`0x0141`): the motion host turns
+  right for a positive value, and Deep Robotics' own bridge (Lite3_ROS) sends `-angular.z`.
+  Before, `{angular: {z: 0.3}}` turned the robot clockwise unless `invert_wz` was set.
+- `lite3_description`: Deep Robotics' official model (deep_robotics_model `Lite3.urdf`, BSD-3)
+  with its meshes, collisions and inertials, as xacro; joints renamed to the official
+  `*_HipX_joint`, `*_HipY_joint`, `*_Knee_joint` (and `lite3_driver`'s `joint_states` with them),
+  body link `TORSO` under `base_link`. Sensor frames stay those of the manual V2.2.1.
+
+### Added
+- `lite3_driver`: the 200 Hz IMU datagram `0x010901` (decoded by Deep Robotics' bridge, not in
+  the manual) feeds `imu` while it arrives (`fast_imu`).
+- `lite3_description`: `lidar:=robosense` for the LiDAR edition's RoboSense (manual 1.1.3).
+
+### Docs
+- References updated to the manual V2.2.1 (UDP Commands V1.1.0-0); motion host address on
+  Ethernet and Wi-Fi; SDK mode note; README without the diagram.
+
 ### Added
 - `lite3_driver`: the motion host's UDP protocol (UDP Commands V1.1.0). `cmd_vel` as speed
   commands in navigation mode with a 0.5 s watchdog; state reports as `odom`, `imu`, `battery`,

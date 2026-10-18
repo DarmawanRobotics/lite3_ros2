@@ -1,15 +1,17 @@
 <?xml version="1.0"?>
 <!--
   Deep Robotics Jueying Lite3.
-  Geometry, sensor positions and joint ranges: Deep Robotics "Motion System" V2.2.1 (1.1, 1.2).
-  Joint axes and leg inertials: Deep Robotics' Lite3 URDF (DeepRoboticsLab/Lite3_rl_training,
-  BSD-3-Clause). Simple shapes instead of meshes.
-  base_link is the centre of the body (x forward, y left, z up). No link may be called body,
-  odom, map or camera_init: those frames belong to FAST-LIO and Molly.
+  Links, joints, meshes, collisions and inertials: Deep Robotics' official model
+  (DeepRoboticsLab/deep_robotics_model, Lite3/urdf/Lite3.urdf, BSD-3-Clause, see
+  LICENSE.deep_robotics_model), kept with its names so lite3_driver's joint_states fit.
+  Sensor positions: Deep Robotics "Motion System" V2.2.1 (1.1.3).
+  base_link is the centre of the body (x forward, y left, z up); the official root TORSO hangs
+  on it with an identity joint. No link may be called body, odom, map or camera_init: those
+  frames belong to FAST-LIO and Molly.
 
   Arguments:
     camera: rtsp (the robot's own wide-angle front camera) | realsense (D435i) | none
-    lidar:  mid360 | none
+    lidar:  mid360 | robosense | none
 -->
 <robot name="lite3" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:arg name="camera" default="rtsp"/>
@@ -18,166 +20,173 @@
   <xacro:property name="lidar" value="$(arg lidar)"/>
 
   <xacro:property name="PI" value="3.141592653589793"/>
-  <xacro:property name="DEG" value="${PI / 180.0}"/>
+  <xacro:property name="MESH" value="package://lite3_description/meshes"/>
 
-  <!-- body: 548 x 370 mm, 74 mm above and 44 mm below the origin; 11 kg with battery -->
-  <xacro:property name="body_length" value="0.548"/>
-  <xacro:property name="body_width" value="0.370"/>
-  <xacro:property name="body_height" value="0.118"/>
-  <xacro:property name="body_offset_z" value="0.015"/>
-  <xacro:property name="body_mass" value="11.0"/>
-
-  <!-- legs: HipX on the body, HipY 98.5 mm outward, knee 200 mm and foot 210 mm below -->
+  <!-- legs (official model): HipX on the body, HipY 97.35 mm outward, knee 200 mm and foot
+       210.12 mm below. The manual (1.1.2) rounds these to 98.5 mm and 210 mm. -->
   <xacro:property name="hip_x" value="0.1745"/>
   <xacro:property name="hip_y" value="0.062"/>
-  <xacro:property name="thigh_offset" value="0.0985"/>
+  <xacro:property name="thigh_offset" value="0.09735"/>
   <xacro:property name="thigh_length" value="0.20"/>
-  <xacro:property name="shank_length" value="0.21"/>
-  <xacro:property name="foot_radius" value="0.02"/>
+  <xacro:property name="shank_length" value="0.21012"/>
 
-  <!-- joint ranges (1.2.4) -->
-  <xacro:property name="hipx_lower" value="${-24.0 * DEG}"/>
-  <xacro:property name="hipx_upper" value="${24.0 * DEG}"/>
-  <xacro:property name="hipy_lower" value="${-200.0 * DEG}"/>
-  <xacro:property name="hipy_upper" value="${20.0 * DEG}"/>
-  <xacro:property name="knee_lower" value="${34.5 * DEG}"/>
-  <xacro:property name="knee_upper" value="${156.0 * DEG}"/>
-
-  <!-- sensors (1.1.3), relative to base_link -->
+  <!-- sensors (manual 1.1.3), relative to base_link -->
   <xacro:property name="imu_xyz" value="0.005 0 0"/>
   <xacro:property name="mid360_xyz" value="0.18678 0 0.12498"/>
   <!-- the Mid-360's IMU in its LiDAR frame; FAST-LIO extrinsic_T is the negative -->
   <xacro:property name="mid360_imu_xyz" value="0.011 0.02329 -0.04412"/>
+  <xacro:property name="robosense_xyz" value="0.2033 0 0.12906"/>
   <xacro:property name="realsense_xyz" value="0.25228 -0.0005 0.0741"/>
   <!-- ESTIMATES, measure them: the built-in wide-angle front camera and the ultrasound pair -->
   <xacro:property name="front_camera_xyz" value="0.280 0 0.0"/>
   <xacro:property name="ultrasound_front_xyz" value="0.285 0 -0.03"/>
   <xacro:property name="ultrasound_rear_xyz" value="-0.285 0 -0.03"/>
 
-  <material name="lite3_white"><color rgba="0.92 0.92 0.92 1.0"/></material>
-  <material name="lite3_dark"><color rgba="0.20 0.20 0.22 1.0"/></material>
+  <material name="lite3_body"><color rgba="0.92 0.92 0.92 1.0"/></material>
+  <material name="lite3_leg"><color rgba="0.25 0.25 0.27 1.0"/></material>
+  <material name="lite3_shank"><color rgba="1.0 1.0 1.0 1.0"/></material>
   <material name="lite3_sensor"><color rgba="0.10 0.10 0.12 1.0"/></material>
 
   <link name="base_link"/>
 
-  <joint name="trunk_joint" type="fixed">
+  <joint name="base_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="trunk"/>
+    <child link="TORSO"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <link name="trunk">
-    <visual>
-      <origin xyz="0 0 ${body_offset_z}" rpy="0 0 0"/>
-      <geometry><box size="${body_length} ${body_width} ${body_height}"/></geometry>
-      <material name="lite3_white"/>
-    </visual>
-    <collision>
-      <origin xyz="0 0 ${body_offset_z}" rpy="0 0 0"/>
-      <geometry><box size="${body_length} ${body_width} ${body_height}"/></geometry>
-    </collision>
+  <link name="TORSO">
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="${body_mass}"/>
-      <!-- Deep Robotics' torso inertia, scaled from 5.6056 kg to the 11 kg body -->
-      <inertia ixx="0.04819" ixy="0" ixz="0" iyy="0.10828" iyz="0" izz="0.13768"/>
+      <mass value="5.6056"/>
+      <inertia ixx="0.02456" ixy="0" ixz="0" iyy="0.05518" iyz="0" izz="0.07016"/>
     </inertial>
+    <visual>
+      <geometry><mesh filename="${MESH}/torso.STL"/></geometry>
+      <material name="lite3_body"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <geometry><box size="0.5 0.1 0.12"/></geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <geometry><box size="0.25 0.2 0.12"/></geometry>
+    </collision>
   </link>
 
-  <!-- one leg: front = 1 | -1, left = 1 | -1 -->
-  <xacro:macro name="leg" params="prefix front left">
-    <joint name="${prefix}_HipX" type="revolute">
-      <parent link="base_link"/>
-      <child link="${prefix}_HIP"/>
-      <origin xyz="${front * hip_x} ${left * hip_y} 0" rpy="0 0 0"/>
-      <axis xyz="-1 0 0"/>
-      <limit lower="${hipx_lower}" upper="${hipx_upper}" effort="24.0" velocity="26.16"/>
-    </joint>
+  <!--
+    One leg as in the official model. front, left: 1 | -1. The model mirrors one hip and one
+    thigh mesh by scale and carries per-leg centres of mass; they are passed through unchanged.
+  -->
+  <xacro:macro name="leg" params="prefix front left hip_com hip_ixx hip_izz hip_scale
+                                  thigh_com thigh_scale shank_com">
     <link name="${prefix}_HIP">
-      <visual>
-        <origin xyz="0 ${left * 0.03} 0" rpy="${PI / 2} 0 0"/>
-        <geometry><cylinder radius="0.045" length="0.06"/></geometry>
-        <material name="lite3_dark"/>
-      </visual>
       <inertial>
-        <origin xyz="${-front * 0.006} ${-left * 0.0067} 0.0003" rpy="0 0 0"/>
-        <mass value="0.55"/>
-        <inertia ixx="0.0003949" ixy="0" ixz="0" iyy="0.0004028" iyz="0" izz="0.0004472"/>
+        <origin xyz="${hip_com}" rpy="0 0 0"/>
+        <mass value="0.550"/>
+        <inertia ixx="${hip_ixx}" ixy="0" ixz="0" iyy="0.0004028" iyz="0" izz="${hip_izz}"/>
       </inertial>
-    </link>
-
-    <joint name="${prefix}_HipY" type="revolute">
-      <parent link="${prefix}_HIP"/>
-      <child link="${prefix}_THIGH"/>
-      <origin xyz="0 ${left * thigh_offset} 0" rpy="0 0 0"/>
-      <axis xyz="0 -1 0"/>
-      <limit lower="${hipy_lower}" upper="${hipy_upper}" effort="24.0" velocity="26.1"/>
-    </joint>
-    <link name="${prefix}_THIGH">
       <visual>
-        <origin xyz="0 0 ${-thigh_length / 2}" rpy="0 0 0"/>
-        <geometry><box size="0.04 0.035 ${thigh_length}"/></geometry>
-        <material name="lite3_white"/>
+        <geometry><mesh filename="${MESH}/hip.STL" scale="${hip_scale}"/></geometry>
+        <material name="lite3_leg"/>
       </visual>
       <collision>
-        <origin xyz="0 0 ${-thigh_length / 2}" rpy="0 0 0"/>
-        <geometry><box size="0.04 0.035 ${thigh_length}"/></geometry>
+        <origin xyz="0 ${left * 0.05} 0" rpy="1.57079632 0 0"/>
+        <geometry><cylinder length="0.15" radius="0.04"/></geometry>
       </collision>
+    </link>
+    <joint name="${prefix}_HipX_joint" type="revolute">
+      <origin xyz="${front * hip_x} ${left * hip_y} 0" rpy="0 0 0"/>
+      <parent link="TORSO"/>
+      <child link="${prefix}_HIP"/>
+      <axis xyz="-1 0 0"/>
+      <limit lower="-0.523" upper="0.523" effort="24" velocity="26.2"/>
+    </joint>
+
+    <link name="${prefix}_THIGH">
       <inertial>
-        <origin xyz="-0.0053 ${-left * 0.0146} -0.0427" rpy="0 0 0"/>
+        <origin xyz="${thigh_com}" rpy="0 0 0"/>
         <mass value="0.86"/>
         <inertia ixx="0.005736" ixy="0" ixz="0" iyy="0.004960" iyz="0" izz="0.001436"/>
       </inertial>
+      <visual>
+        <geometry><mesh filename="${MESH}/thigh.STL" scale="${thigh_scale}"/></geometry>
+        <material name="lite3_leg"/>
+      </visual>
+      <collision>
+        <origin xyz="-0.015 0 -0.08" rpy="0 0 0"/>
+        <geometry><box size="0.04 0.045 0.2"/></geometry>
+      </collision>
     </link>
+    <joint name="${prefix}_HipY_joint" type="revolute">
+      <origin xyz="0 ${left * thigh_offset} 0" rpy="0 0 0"/>
+      <parent link="${prefix}_HIP"/>
+      <child link="${prefix}_THIGH"/>
+      <axis xyz="0 -1 0"/>
+      <limit lower="-2.67" upper="0.314" effort="24" velocity="26.2"/>
+    </joint>
 
-    <joint name="${prefix}_Knee" type="revolute">
+    <link name="${prefix}_SHANK">
+      <inertial>
+        <origin xyz="${shank_com}" rpy="0 0 0"/>
+        <mass value="0.153"/>
+        <inertia ixx="0.00089039" ixy="0" ixz="0" iyy="0.00090672" iyz="0" izz="3.1266E-05"/>
+      </inertial>
+      <visual>
+        <geometry><mesh filename="${MESH}/shank.STL"/></geometry>
+        <material name="lite3_shank"/>
+      </visual>
+      <collision>
+        <origin xyz="0.005 0 -0.03" rpy="0 -0.2 0"/>
+        <geometry><cylinder length="0.12" radius="0.015"/></geometry>
+      </collision>
+      <collision>
+        <origin xyz="0.01 0 -0.14" rpy="0 0.15 0"/>
+        <geometry><cylinder length="0.10" radius="0.015"/></geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}_Knee_joint" type="revolute">
+      <origin xyz="0 0 ${-thigh_length}" rpy="0 0 0"/>
       <parent link="${prefix}_THIGH"/>
       <child link="${prefix}_SHANK"/>
-      <origin xyz="0 0 ${-thigh_length}" rpy="0 0 0"/>
       <axis xyz="0 -1 0"/>
-      <limit lower="${knee_lower}" upper="${knee_upper}" effort="36.0" velocity="17.1"/>
+      <limit lower="0.524" upper="2.792" effort="36" velocity="17.3"/>
     </joint>
-    <link name="${prefix}_SHANK">
-      <visual>
-        <origin xyz="0 0 ${-shank_length / 2}" rpy="0 0 0"/>
-        <geometry><box size="0.022 0.022 ${shank_length}"/></geometry>
-        <material name="lite3_dark"/>
-      </visual>
-      <collision>
-        <origin xyz="0 0 ${-shank_length / 2}" rpy="0 0 0"/>
-        <geometry><box size="0.022 0.022 ${shank_length}"/></geometry>
-      </collision>
-      <inertial>
-        <origin xyz="0.0065 0 -0.1216" rpy="0 0 0"/>
-        <mass value="0.153"/>
-        <inertia ixx="0.00089039" ixy="0" ixz="0" iyy="0.00090672" iyz="0" izz="0.000031266"/>
-      </inertial>
-    </link>
 
-    <joint name="${prefix}_foot_joint" type="fixed">
-      <parent link="${prefix}_SHANK"/>
-      <child link="${prefix}_FOOT"/>
-      <origin xyz="0 0 ${-shank_length}" rpy="0 0 0"/>
-    </joint>
     <link name="${prefix}_FOOT">
-      <visual>
-        <geometry><sphere radius="${foot_radius}"/></geometry>
-        <material name="lite3_dark"/>
-      </visual>
-      <collision>
-        <geometry><sphere radius="${foot_radius}"/></geometry>
-      </collision>
       <inertial>
         <mass value="0.02"/>
-        <inertia ixx="0.000003" ixy="0" ixz="0" iyy="0.000003" iyz="0" izz="0.000003"/>
+        <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
       </inertial>
+      <collision>
+        <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+        <geometry><sphere radius="0.022"/></geometry>
+      </collision>
     </link>
+    <joint name="${prefix}_Ankle" type="fixed">
+      <origin xyz="0 0 ${-shank_length}" rpy="0 0 0"/>
+      <parent link="${prefix}_SHANK"/>
+      <child link="${prefix}_FOOT"/>
+    </joint>
   </xacro:macro>
 
-  <xacro:leg prefix="FL" front="1" left="1"/>
-  <xacro:leg prefix="FR" front="1" left="-1"/>
-  <xacro:leg prefix="HL" front="-1" left="1"/>
-  <xacro:leg prefix="HR" front="-1" left="-1"/>
+  <xacro:leg prefix="FL" front="1" left="1"
+             hip_com="-0.00601 -0.0066532 0.00034295" hip_ixx="0.0003949" hip_izz="0.0004472"
+             hip_scale="1 1 1" thigh_com="-0.0039245 -0.014632 -0.025146" thigh_scale="1 1 1"
+             shank_com="0.0064794 -1.4535E-06 -0.12157"/>
+  <xacro:leg prefix="FR" front="1" left="-1"
+             hip_com="-0.010579 0.011358 0.00048546" hip_ixx="0.0004472" hip_izz="0.0003949"
+             hip_scale="1 -1 1" thigh_com="-0.0039245 0.014632 -0.025146" thigh_scale="1 -1 1"
+             shank_com="0.0064794 -1.4552E-06 -0.12157"/>
+  <xacro:leg prefix="HL" front="-1" left="1"
+             hip_com="0.010905 -0.012636 0.001051" hip_ixx="0.0003949" hip_izz="0.0004472"
+             hip_scale="-1 1 1" thigh_com="-0.0039245 -0.014632 -0.025146" thigh_scale="1 1 1"
+             shank_com="0.0064794 -1.4558E-06 -0.12157"/>
+  <xacro:leg prefix="HR" front="-1" left="-1"
+             hip_com="0.010354 0.011423 0.00049498" hip_ixx="0.0004472" hip_izz="0.0003949"
+             hip_scale="-1 -1 1" thigh_com="-0.0039245 0.014632 -0.025146" thigh_scale="1 -1 1"
+             shank_com="0.0064794 -1.4529E-06 -0.12157"/>
 
   <!-- IMU of the motion host -->
   <joint name="imu_joint" type="fixed">
@@ -221,6 +230,22 @@
       <origin xyz="${mid360_imu_xyz}" rpy="0 0 0"/>
     </joint>
     <link name="livox_imu_frame"/>
+  </xacro:if>
+
+  <!-- RoboSense LiDAR of the LiDAR edition (rslidar_sdk publishes in rslidar) -->
+  <xacro:if value="${lidar == 'robosense'}">
+    <joint name="rslidar_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="rslidar"/>
+      <origin xyz="${robosense_xyz}" rpy="0 0 0"/>
+    </joint>
+    <link name="rslidar">
+      <visual>
+        <origin xyz="0 0 -0.03" rpy="0 0 0"/>
+        <geometry><cylinder radius="0.05" length="0.07"/></geometry>
+        <material name="lite3_sensor"/>
+      </visual>
+    </link>
   </xacro:if>
 
   <!-- the robot's own wide-angle camera (RTSP, lite3_camera publishes in the optical frame) -->

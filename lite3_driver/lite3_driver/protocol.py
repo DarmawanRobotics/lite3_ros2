@@ -92,11 +92,18 @@ JOINT_ANGLES = 0x0902           # 12 doubles, rad, 100 Hz
 JOINT_VELOCITIES = 0x0903       # 12 doubles, rad/s, 100 Hz
 SPEAKER_STATUS = 0x11050F08     # simple: 0 off, 1 on
 
-JOINT_NAMES = (
-    'FL_HipX', 'FL_HipY', 'FL_Knee',
-    'FR_HipX', 'FR_HipY', 'FR_Knee',
-    'HL_HipX', 'HL_HipY', 'HL_Knee',
-    'HR_HipX', 'HR_HipY', 'HR_Knee',
+# Not in the document: Deep Robotics' own ROS 2 bridge (Lite3_ROS, transfer/protocol.hpp)
+# decodes a 200 Hz IMU datagram too: uint32 timestamp, roll/pitch/yaw (degrees), rates (rad/s)
+# and acceleration (m/s^2) as floats. Used when the motion host sends it.
+IMU_FAST = 0x010901
+IMU_FAST_STRUCT = struct.Struct('<I9f')  # 40 bytes
+
+# The report's order (FL, FR, HL, HR x HipX, HipY, Knee) with the joint names of Deep Robotics'
+# model (deep_robotics_model Lite3.urdf), which lite3_description uses.
+JOINT_NAMES = tuple(
+    f'{leg}_{joint}_joint'
+    for leg in ('FL', 'FR', 'HL', 'HR')
+    for joint in ('HipX', 'HipY', 'Knee')
 )
 JOINT_ARRAY = struct.Struct('<12d')
 
@@ -200,6 +207,16 @@ class StateReport:
         return self.motion_state == MOTION_STEPPING
 
 
+@dataclass(frozen=True)
+class ImuReport:
+    """A decoded fast IMU datagram (0x010901)."""
+
+    timestamp: int
+    rpy_deg: Tuple[float, float, float]
+    rpy_vel: Tuple[float, float, float]
+    xyz_acc: Tuple[float, float, float]
+
+
 def u32(value: int) -> int:
     """Return a signed command value as the uint32 the head carries (two's complement)."""
     return int(value) & 0xFFFFFFFF
@@ -294,6 +311,14 @@ def decode_joints(payload: bytes) -> Optional[Tuple[float, ...]]:
     return JOINT_ARRAY.unpack_from(payload)
 
 
+def decode_imu(payload: bytes) -> Optional[ImuReport]:
+    """Decode a fast IMU payload; None when it is short."""
+    if len(payload) < IMU_FAST_STRUCT.size:
+        return None
+    values = IMU_FAST_STRUCT.unpack_from(payload)
+    return ImuReport(values[0], tuple(values[1:4]), tuple(values[4:7]), tuple(values[7:10]))
+
+
 def name_of(table: dict, value: Optional[int]) -> str:
     """Return the readable name of a state code, 'unknown' when it is not in the table."""
     return table.get(value, 'unknown') if value is not None else 'unknown'
@@ -314,6 +339,12 @@ def encode_state(report: StateReport, layout: str = 'natural') -> bytes:
         bool(report.voice_enabled), front, rear,
     )
     return complex_command(STATE, payload)
+
+
+def encode_imu(report: ImuReport) -> bytes:
+    """Encode a fast IMU datagram as the motion host would (tests and the simulator)."""
+    return complex_command(IMU_FAST, IMU_FAST_STRUCT.pack(
+        report.timestamp, *report.rpy_deg, *report.rpy_vel, *report.xyz_acc))
 
 
 def encode_joints(code: int, values) -> bytes:

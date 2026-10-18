@@ -3,9 +3,10 @@
 <package format="3">
   <name>lite3_description</name>
   <version>0.1.0</version>
-  <description>URDF of the Deep Robotics Jueying Lite3 with its Livox Mid-360, camera and ultrasound frames.</description>
+  <description>URDF of the Deep Robotics Jueying Lite3: Deep Robotics' model with meshes (BSD-3-Clause), Mid-360 / RoboSense, camera, IMU and ultrasound frames.</description>
   <maintainer email="darmawandeveloper@gmail.com">Agus Darmawan</maintainer>
   <license>Apache-2.0</license>
+  <license file="LICENSE.deep_robotics_model">BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

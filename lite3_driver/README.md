@@ -1,7 +1,7 @@
 # lite3_driver
 
 ROS 2 driver of the Deep Robotics Jueying Lite3. It speaks the motion host's UDP protocol
-(Deep Robotics *UDP Commands* V1.1.0): velocity as speed commands in navigation mode, the 50 Hz
+(Deep Robotics manual V2.2.1, *UDP Commands* V1.1.0-0): velocity as speed commands in navigation mode, the 50 Hz
 state report and the 100 Hz joint reports as ROS topics, every robot command as a
 `std_srvs/Trigger` service, and gestures that block until the robot is done.
 
@@ -25,9 +25,9 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 |---|---|---|---|
 | sub | `cmd_vel` | `geometry_msgs/Twist` | `base_link`, REP-103: `linear.x` forward, `linear.y` left, `angular.z` counter-clockwise; zeros after `cmd_timeout_sec` without a command |
 | pub | `odom` | `nav_msgs/Odometry` | leg odometry: pose from `pos_world`, twist in `base_link` from `vel_body`; **no TF** |
-| pub | `imu` | `sensor_msgs/Imu` | attitude (report degrees → quaternion), rates, acceleration, frame `imu_link` |
+| pub | `imu` | `sensor_msgs/Imu` | attitude (report degrees → quaternion), rates, acceleration, frame `imu_link`; from the 200 Hz IMU datagram `0x010901` when the motion host sends it, else from the state report |
 | pub | `battery` | `sensor_msgs/BatteryState` | `percentage` 0–1, `battery_hz` |
-| pub | `joint_states` | `sensor_msgs/JointState` | `FL_HipX` ... `HR_Knee`: angles and velocities |
+| pub | `joint_states` | `sensor_msgs/JointState` | `FL_HipX_joint` ... `HR_Knee_joint` (the official model's names): angles and velocities |
 | pub | `ultrasound/front`, `ultrasound/rear` | `sensor_msgs/Range` | 0.28–4.5 m, frames `ultrasound_front`, `ultrasound_rear` |
 | pub | `state` | `lite3_interfaces/RobotState` | basic state, gait, motion, battery, ultrasound, link, control mode, gesture |
 | pub | `diagnostics` | `diagnostic_msgs/DiagnosticArray` | ERROR without state reports, WARN on protection, lost balance, low battery |
@@ -56,13 +56,23 @@ while one runs. Any non-zero `cmd_vel` stops a running gesture.
 ## Velocity
 
 `cmd_vel` is clamped to `max_*` and the protocol's ranges (1.0 m/s, 0.5 m/s, 1.5 rad/s) and sent
-as the three speed commands `0x0140` (x), `0x0145` (y), `0x0141` (yaw) at `cmd_rate_hz`, with the
-signs of REP-103 (Deep Robotics' own ROS bridge sends `cmd_vel` the same way). The robot only
+as the three speed commands `0x0140` (x), `0x0145` (y), `0x0141` (yaw) at `cmd_rate_hz`. x and y
+go out as they are; the yaw rate is negated, because the motion host turns right for a positive
+value (like its axis commands): Deep Robotics' own ROS 2 bridge
+([Lite3_ROS](https://github.com/DeepRoboticsLab/Lite3_ROS), `Jetson2Motion.cpp`) sends
+`-angular.z` too. The robot only
 obeys them in navigation mode: with `auto_navigation_mode` the driver sends `0x21010C03` when
 motion starts after an idle stream, and every `mode_refresh_sec` while moving. When `cmd_vel`
 goes quiet for `cmd_timeout_sec` the driver sends zeros for `stop_burst_sec`, then nothing.
 
-If the robot turns or strafes the wrong way, set `invert_wz` / `invert_vy` ([Verify on the real robot](../README.md#verify-on-the-real-robot)).
+If the robot still turns or strafes the wrong way, set `invert_wz` / `invert_vy` ([Verify on the real robot](../README.md#verify-on-the-real-robot)).
+
+## Fast IMU
+
+The manual lists no IMU datagram of its own, but Deep Robotics' bridge also decodes `0x010901`:
+a `uint32` timestamp and nine floats (roll, pitch, yaw in degrees, rates, acceleration) at
+200 Hz. While those arrive (`fast_imu: true`), `imu` is published from each of them and no longer
+from the 50 Hz state report; `diagnostics` shows which source is in use (`imu_source`).
 
 ## State report layouts
 
@@ -89,6 +99,7 @@ read as 0–1 or as a percentage.
 | `odom_hz`, `joint_state_hz`, `state_hz`, `battery_hz`, `ultrasound_hz` | 50, 50, 10, 1, 10 | |
 | `state_timeout_sec` | 1.0 | no report for this long: disconnected |
 | `low_battery` | 0.2 | diagnostics warn below |
+| `fast_imu` | true | publish `imu` from `0x010901` datagrams when they arrive |
 | `gesture.*` | | keyframe amplitudes and timing, hello timeouts |
 
 ## Launch
@@ -108,6 +119,6 @@ The full robot (URDF, LiDAR, camera) starts from [lite3_bringup](../lite3_bringu
 colcon test --packages-select lite3_driver && colcon test-result --verbose
 ```
 
-The codec is checked against the document's own worked example (appendix 2.1) and all three
-struct layouts; the velocity policy, the gestures (against a simulated motion host) and the node
+The codec is checked against the document's own worked example (appendix 2.1), all three
+struct layouts and the fast IMU datagram; the velocity policy, the gestures (against a simulated motion host) and the node
 (against a fake motion host on the loopback interface) have their own tests.
