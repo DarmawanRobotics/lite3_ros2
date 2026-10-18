@@ -11,6 +11,11 @@ versions follow [SemVer](https://semver.org).
   when motion starts after a quiet stream (`mode_repeats` 3, `mode_repeat_sec` 0.2, replacing
   `mode_refresh_sec`); `manual_mode` drops the rest of the repeats.
 - `lite3_driver`: `emergency_stop` sends the soft e-stop three times.
+- `lite3_driver`: `emergency_stop`, `sit_down` and `save_data` hold `cmd_vel` until `stand_up`,
+  and then until `cmd_vel` has been zero or quiet once; before, the next `cmd_vel` drove again,
+  and a stream still running when the robot stood up drove it off at once.
+- `lite3_driver`: a `cmd_vel` with NaN or inf in any field is a stop; before, only that component
+  was dropped and the rest was executed.
 
 ### Changed
 - `lite3_driver`: the yaw rate of `cmd_vel` goes out negated (`0x0141`): the motion host turns

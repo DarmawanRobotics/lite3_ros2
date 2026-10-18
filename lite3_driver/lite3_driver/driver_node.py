@@ -7,6 +7,7 @@ IMU, battery, joint states, ultrasound and the RobotState message. Every robot c
 std_srvs/Trigger service; gestures block until they are done.
 """
 
+import math
 import threading
 import time
 
@@ -266,7 +267,18 @@ class Lite3DriverNode(Node):
     def on_cmd_vel(self, msg: Twist):
         """Take a velocity command; any motion stops a running gesture."""
         now = time.monotonic()
-        self._policy.command(msg.linear.x, msg.linear.y, msg.angular.z, now)
+        values = (msg.linear.x, msg.linear.y, msg.linear.z,
+                  msg.angular.x, msg.angular.y, msg.angular.z)
+        if all(math.isfinite(v) for v in values):
+            self._policy.command(msg.linear.x, msg.linear.y, msg.angular.z, now)
+        else:
+            self.get_logger().warn('cmd_vel with NaN or inf: stopping',
+                                   throttle_duration_sec=2.0)
+            self._policy.command(0.0, 0.0, 0.0, now)
+        if self._policy.moving(now) and not self._policy.driving:
+            self.get_logger().warn(
+                f'cmd_vel not sent ({self._policy.gate}): call stand_up after a hold, then '
+                'cmd_vel must be zero or quiet once', throttle_duration_sec=5.0)
         if self._runner.active and self._policy.moving(now):
             self._runner.abort()
 
@@ -298,6 +310,8 @@ class Lite3DriverNode(Node):
         else:
             response.success = False
             response.message = f'busy ({p.name_of(p.BASIC_STATES, report.basic_state)})'
+        if response.success:
+            self._policy.release()  # cmd_vel drives again once it was zero or quiet
         return response
 
     def on_sit_down(self, _request, response):
@@ -315,11 +329,13 @@ class Lite3DriverNode(Node):
         else:
             response.success = False
             response.message = f'busy ({p.name_of(p.BASIC_STATES, report.basic_state)})'
+        if response.success:
+            self._policy.hold('sit_down', time.monotonic())  # until stand_up
         return response
 
     def on_emergency_stop(self, _request, response):
-        """Zero the velocity, stop any gesture and send the soft emergency stop."""
-        self._policy.stop(time.monotonic())
+        """Hold the velocity until stand_up, stop any gesture, send the soft emergency stop."""
+        self._policy.hold('emergency_stop', time.monotonic())
         self._runner.abort()
         self._link.send_all(self._policy.speeds(0.0, 0.0, 0.0))
         # three times: one lost UDP datagram must not lose the stop
@@ -345,6 +361,8 @@ class Lite3DriverNode(Node):
             ):
                 response.success, response.message = False, 'sit down first'
                 return response
+            if name == 'save_data':
+                self._policy.hold('save_data', time.monotonic())  # the motion program quits
             response.success = self.send_commands(datagrams)
             if response.success and name in MODES:
                 self._control_mode = MODES[name]
@@ -518,6 +536,9 @@ class Lite3DriverNode(Node):
                 status.message += ', low battery' if low else ''
             else:
                 status.level = DiagnosticStatus.OK
+            if self._policy.moving(time.monotonic()) and not self._policy.driving:
+                status.level = max(status.level, DiagnosticStatus.WARN)
+                status.message += f', cmd_vel not sent ({self._policy.gate})'
         values = {
             'rx': self._link.rx_count,
             'tx': self._link.tx_count,
@@ -527,6 +548,7 @@ class Lite3DriverNode(Node):
             'speaker': '-' if self._speaker is None else ('on' if self._speaker else 'off'),
             'imu_source': 'fast 0x010901' if self.fast_imu_active() else 'state report',
             'cmd': ' '.join(f'{v:.2f}' for v in self._policy.sent_command(time.monotonic())),
+            'velocity': self._policy.gate,
         }
         if report is not None:
             values.update(

@@ -137,6 +137,9 @@ On a new robot, in an open area with someone at the remote:
 
 - The driver stops on its own: no `cmd_vel` for 0.5 s gives zeros, then silence. Only Molly's
   control mux should publish on `/robot/cmd_vel`.
+- `emergency_stop`, `sit_down` and `save_data` hold `cmd_vel` until `stand_up`, and after that
+  until `cmd_vel` has been zero or quiet once: a stream that kept running never drives the robot
+  off when it stands up again.
 - `emergency_stop` sends the motion host's soft emergency stop (three times, against a lost
   datagram); the remote and the robot's own stop button always work too.
 - Gestures only run while the robot stands still; any motion command stops them. `hello` makes

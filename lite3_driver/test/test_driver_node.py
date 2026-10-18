@@ -247,6 +247,42 @@ def test_emergency_stop_goes_out_three_times(rig):
     assert wait_for(lambda: rig.host.codes(since).count(p.SOFT_ESTOP) == 3)
 
 
+def test_a_running_stream_never_drives_after_emergency_stop(rig):
+    """emergency_stop holds cmd_vel; after stand_up only a fresh stream drives the robot."""
+    assert wait_for(lambda: p.HEARTBEAT in rig.host.codes())
+    twist = {'value': Twist(linear=Vector3(x=0.2))}
+    stop = threading.Event()
+
+    def stream():
+        while not stop.is_set():
+            rig.cmd.publish(twist['value'])
+            time.sleep(0.05)
+
+    streamer = threading.Thread(target=stream, daemon=True)
+    streamer.start()
+    try:
+        assert wait_for(lambda: (p.SPEED_VX, 0.2) in rig.host.speeds())
+        assert rig.call('emergency_stop').success
+        time.sleep(0.7)  # past the stop burst
+        held = time.monotonic()
+        time.sleep(1.0)
+        assert rig.host.speeds(held) == []  # the stream goes on, nothing is sent
+        rig.host.report(rig.port, standing_report(basic_state=p.STATE_SITTING))
+        assert wait_for(lambda: rig.node.latest_report() is not None)
+        assert rig.call('stand_up').success
+        released = time.monotonic()
+        time.sleep(1.0)
+        assert all(v == 0.0 for _, v in rig.host.speeds(released))  # still the old stream
+        twist['value'] = Twist()  # the commander stops once
+        time.sleep(0.3)
+        twist['value'] = Twist(linear=Vector3(x=0.2))
+        fresh = time.monotonic()
+        assert wait_for(lambda: (p.SPEED_VX, 0.2) in rig.host.speeds(fresh))
+    finally:
+        stop.set()
+        streamer.join(timeout=1.0)
+
+
 def test_stand_up_and_sit_down_follow_the_state(rig):
     """Stand up toggles only from sitting; sit down is refused without state."""
     assert not rig.call('sit_down').success  # no state yet
