@@ -145,7 +145,10 @@ On a new robot, in an open area with someone at the remote:
 - In SDK mode (Deep Robotics' `sdk_deploy`, switched on in the app) an RL policy replaces the
   motion program: this driver's commands do not apply until SDK mode is off again.
 - With `auto_navigation_mode` the driver switches the robot to navigation mode when motion
-  starts: the remote then drives only after switching back to manual.
+  starts after `cmd_vel` was quiet, and not again while `cmd_vel` streams: switching to manual
+  on the remote takes the robot over until `cmd_vel` has been quiet for 1 s (the state report
+  does not say which mode the robot is in, so the driver cannot tell). Set it to `false` where
+  only the remote or an explicit `navigation_mode` call may hand the robot to `cmd_vel`.
 
 ## Develop
 

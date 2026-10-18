@@ -36,8 +36,45 @@ def test_fresh_command_streams_with_navigation_mode_first():
     # +angular.z (counter-clockwise) goes out negative: the motion host turns right for positive
     assert speeds(first) == {p.SPEED_VX: 0.3, p.SPEED_VY: 0.1, p.SPEED_WZ: -0.5}
     assert codes(policy.tick(0.05)) == [p.SPEED_VX, p.SPEED_VY, p.SPEED_WZ]
+
+
+def test_navigation_mode_only_when_motion_starts():
+    """Navigation mode goes out mode_repeats times as motion starts, never while it streams."""
+    policy = VelocityPolicy(VelocityConfig(mode_repeats=3, mode_repeat_sec=0.2))
+    sent = []
+    for i in range(200):  # 10 s of cmd_vel at 20 Hz
+        now = i * 0.05 + 0.01
+        policy.command(0.3, 0.0, 0.0, now=now)
+        if p.NAVIGATION_MODE in codes(policy.tick(now)):
+            sent.append(now)
+    # an operator who switches the robot to manual on the remote keeps it while cmd_vel streams
+    assert len(sent) == 3 and sent[-1] < 0.6
+
+
+def test_a_pause_with_zeros_is_the_same_stream():
+    """Zeros keep the stream alive: motion after them does not ask for navigation mode again."""
+    policy = VelocityPolicy(VelocityConfig(mode_repeats=1))
+    policy.command(0.3, 0.0, 0.0, now=0.0)
+    assert p.NAVIGATION_MODE in codes(policy.tick(0.0))
+    for i in range(1, 60):
+        policy.command(0.0, 0.0, 0.0, now=i * 0.1)
+        policy.tick(i * 0.1)
+    policy.command(0.3, 0.0, 0.0, now=6.0)
+    assert p.NAVIGATION_MODE not in codes(policy.tick(6.0))
+
+
+def test_manual_mode_holds_until_the_stream_goes_idle():
+    """After manual_mode no navigation mode goes out until cmd_vel has gone quiet."""
+    policy = VelocityPolicy(VelocityConfig(cmd_timeout_sec=0.5, stop_burst_sec=0.5))
+    policy.command(0.3, 0.0, 0.0, now=0.0)
+    assert p.NAVIGATION_MODE in codes(policy.tick(0.0))
+    policy.hold_manual()
+    policy.command(0.3, 0.0, 0.0, now=0.25)
+    assert p.NAVIGATION_MODE not in codes(policy.tick(0.25))  # the remaining repeats are dropped
+    assert speeds(policy.tick(0.8))[p.SPEED_VX] == 0.0
+    assert policy.tick(1.3) == []  # idle
     policy.command(0.3, 0.0, 0.0, now=2.0)
-    assert p.NAVIGATION_MODE in codes(policy.tick(2.0))  # refreshed while moving
+    assert codes(policy.tick(2.0))[0] == p.NAVIGATION_MODE
 
 
 def test_watchdog_sends_zeros_then_goes_silent():

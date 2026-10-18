@@ -5,6 +5,12 @@ versions follow [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+- `lite3_driver`: navigation mode is no longer re-sent every 2 s while `cmd_vel` streams, which
+  took the robot back from an operator who had switched it to manual on the remote. It goes out
+  when motion starts after a quiet stream (`mode_repeats` 3, `mode_repeat_sec` 0.2, replacing
+  `mode_refresh_sec`); `manual_mode` drops the rest of the repeats.
+
 ### Changed
 - `lite3_driver`: the yaw rate of `cmd_vel` goes out negated (`0x0141`): the motion host turns
   right for a positive value, and Deep Robotics' own bridge (Lite3_ROS) sends `-angular.z`.

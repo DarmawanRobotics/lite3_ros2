@@ -78,7 +78,8 @@ class Lite3DriverNode(Node):
         declare('cmd_timeout_sec', 0.5)
         declare('stop_burst_sec', 0.5)
         declare('auto_navigation_mode', True)
-        declare('mode_refresh_sec', 2.0)
+        declare('mode_repeats', 3)
+        declare('mode_repeat_sec', 0.2)
         declare('max_vx', 1.0)
         declare('max_vy', 0.5)
         declare('max_wz', 1.5)
@@ -113,7 +114,8 @@ class Lite3DriverNode(Node):
             cmd_timeout_sec=float(value('cmd_timeout_sec')),
             stop_burst_sec=float(value('stop_burst_sec')),
             auto_navigation_mode=bool(value('auto_navigation_mode')),
-            mode_refresh_sec=float(value('mode_refresh_sec')),
+            mode_repeats=int(value('mode_repeats')),
+            mode_repeat_sec=float(value('mode_repeat_sec')),
             invert_vy=bool(value('invert_vy')),
             invert_wz=bool(value('invert_wz')),
         ))
@@ -344,6 +346,8 @@ class Lite3DriverNode(Node):
             response.success = self.send_commands(datagrams)
             if response.success and name in MODES:
                 self._control_mode = MODES[name]
+                if name == 'manual_mode':
+                    self._policy.hold_manual()  # auto_navigation_mode stays out of this stream
             note = '' if self.connected() else ' (no state from the motion host)'
             response.message = f'{name} sent{note}' if response.success else self._link.last_error
             return response
