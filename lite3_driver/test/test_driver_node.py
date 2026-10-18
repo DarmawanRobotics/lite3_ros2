@@ -179,6 +179,21 @@ def test_reports_become_odometry_imu_battery_and_state(rig):
     assert list(rig.got['joints'][-1].name) == list(p.JOINT_NAMES)
 
 
+def test_fast_imu_takes_over_the_imu_topic(rig):
+    """0x010901 datagrams are published as imu; the state report no longer is."""
+    imu = p.ImuReport(1, (0.0, 0.0, -90.0), (0.0, 0.0, -0.4), (0.0, 0.0, 9.8))
+    for _ in range(5):
+        rig.host.sock.sendto(p.encode_imu(imu), ('127.0.0.1', rig.port))
+        time.sleep(0.01)
+    assert wait_for(lambda: any(m.angular_velocity.z == pytest.approx(-0.4)
+                                for m in rig.got['imu']))
+    count = len(rig.got['imu'])
+    rig.host.report(rig.port, standing_report())  # its imu (yaw +90) must not be published
+    assert wait_for(lambda: rig.got['odom'])
+    time.sleep(0.1)
+    assert all(m.orientation.z <= 0.0 for m in rig.got['imu'][count:])
+
+
 def test_cmd_vel_streams_speeds_then_zeros_then_silence(rig):
     """cmd_vel becomes navigation mode and speed commands; the watchdog stops the robot."""
     assert wait_for(lambda: p.HEARTBEAT in rig.host.codes())

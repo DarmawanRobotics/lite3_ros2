@@ -35,6 +35,7 @@ from std_srvs.srv import Trigger
 ULTRASOUND_MIN = 0.28
 ULTRASOUND_MAX = 4.5
 ULTRASOUND_FOV = 0.5  # rad, nominal cone of the Lite3 ultrasound sensors
+FAST_IMU_TIMEOUT = 0.5  # s without a 0x010901 datagram: imu comes from the state report again
 
 # Plain commands: service name -> (code, value) datagrams sent in this order.
 COMMANDS = {
@@ -93,6 +94,7 @@ class Lite3DriverNode(Node):
         declare('ultrasound_hz', 10.0)
         declare('state_timeout_sec', 1.0)
         declare('low_battery', 0.2)
+        declare('fast_imu', True)
         gesture_defaults = GestureConfig()
         for field in gesture_defaults.__dataclass_fields__:
             declare(f'gesture.{field}', getattr(gesture_defaults, field))
@@ -103,6 +105,7 @@ class Lite3DriverNode(Node):
         self._imu_frame = value('imu_frame')
         self._state_timeout = float(value('state_timeout_sec'))
         self._low_battery = float(value('low_battery'))
+        self._fast_imu = bool(value('fast_imu'))
         self._policy = VelocityPolicy(VelocityConfig(
             max_vx=float(value('max_vx')),
             max_vy=float(value('max_vy')),
@@ -126,6 +129,7 @@ class Lite3DriverNode(Node):
         self._angles = None
         self._velocities = None
         self._speaker = None
+        self._fast_imu_time = None
         self._prefix_warned = False
         self._control_mode = 'unknown'
         self._ultrasound_due = 0.0
@@ -220,6 +224,18 @@ class Lite3DriverNode(Node):
                     self._velocities = velocities
         elif datagram.code == p.SPEAKER_STATUS:
             self._speaker = bool(datagram.value)
+        elif datagram.code == p.IMU_FAST and self._fast_imu:
+            imu = p.decode_imu(datagram.payload)
+            if imu is not None:
+                with self._data_lock:
+                    self._fast_imu_time = time.monotonic()
+                self._imu_pub.publish(self.imu(imu, self.get_clock().now().to_msg()))
+
+    def fast_imu_active(self) -> bool:
+        """Return True while 0x010901 IMU datagrams arrive: imu then comes from them."""
+        with self._data_lock:
+            stamp = self._fast_imu_time
+        return stamp is not None and time.monotonic() - stamp <= FAST_IMU_TIMEOUT
 
     def latest_report(self):
         """Return the latest state report, or None."""
@@ -356,7 +372,8 @@ class Lite3DriverNode(Node):
             return
         stamp = self.get_clock().now().to_msg()
         self._odom_pub.publish(self.odometry(report, stamp))
-        self._imu_pub.publish(self.imu(report, stamp))
+        if not self.fast_imu_active():
+            self._imu_pub.publish(self.imu(report, stamp))
         now = time.monotonic()
         if report.ultrasound is not None and now >= self._ultrasound_due:
             self._ultrasound_due = now + self._ultrasound_period
@@ -386,7 +403,7 @@ class Lite3DriverNode(Node):
         return msg
 
     def imu(self, report, stamp) -> Imu:
-        """IMU attitude, rates and acceleration as the motion host reports them."""
+        """IMU attitude, rates and acceleration (a state report or a fast IMU datagram)."""
         msg = Imu()
         msg.header.stamp = stamp
         msg.header.frame_id = self._imu_frame
@@ -502,6 +519,7 @@ class Lite3DriverNode(Node):
             'control_mode': self._control_mode,
             'gesture': self._runner.active or '-',
             'speaker': '-' if self._speaker is None else ('on' if self._speaker else 'off'),
+            'imu_source': 'fast 0x010901' if self.fast_imu_active() else 'state report',
             'cmd': ' '.join(f'{v:.2f}' for v in self._policy.sent_command(time.monotonic())),
         }
         if report is not None:

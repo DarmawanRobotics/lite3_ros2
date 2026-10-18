@@ -141,3 +141,15 @@ def test_joint_round_trip():
     # the document's order, with the joint names of the official model (lite3_description)
     assert p.JOINT_NAMES[:3] == ('FL_HipX_joint', 'FL_HipY_joint', 'FL_Knee_joint')
     assert p.JOINT_NAMES[-1] == 'HR_Knee_joint' and len(p.JOINT_NAMES) == 12
+
+
+def test_fast_imu_round_trip():
+    """The 200 Hz IMU datagram of Deep Robotics' bridge: uint32 timestamp and 9 floats."""
+    report = p.ImuReport(7, (1.5, -2.0, 90.0), (0.1, 0.2, 0.3), (0.0, 0.5, 9.75))
+    datagram = p.parse_datagram(p.encode_imu(report))
+    assert (datagram.code, datagram.kind, datagram.value) == (p.IMU_FAST, p.TYPE_COMPLEX, 40)
+    decoded = p.decode_imu(datagram.payload)
+    assert decoded.timestamp == 7
+    assert decoded.rpy_deg == (1.5, -2.0, 90.0)
+    assert decoded.xyz_acc == (0.0, 0.5, 9.75)
+    assert p.decode_imu(datagram.payload[:39]) is None
