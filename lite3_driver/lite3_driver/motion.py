@@ -112,7 +112,8 @@ class VelocityPolicy:
         return []
 
     def speeds(self, vx: float, vy: float, wz: float) -> List[bytes]:
-        """Encode the three speed commands in the motion host's signs.
+        """
+        Encode the three speed commands in the motion host's signs.
 
         x forward and y left are sent as they are. The motion host turns right for a positive
         angular speed, as for its axis commands: Deep Robotics' own bridge (Lite3_ROS,
