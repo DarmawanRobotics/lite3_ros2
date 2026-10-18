@@ -92,11 +92,12 @@ JOINT_ANGLES = 0x0902           # 12 doubles, rad, 100 Hz
 JOINT_VELOCITIES = 0x0903       # 12 doubles, rad/s, 100 Hz
 SPEAKER_STATUS = 0x11050F08     # simple: 0 off, 1 on
 
-JOINT_NAMES = (
-    'FL_HipX', 'FL_HipY', 'FL_Knee',
-    'FR_HipX', 'FR_HipY', 'FR_Knee',
-    'HL_HipX', 'HL_HipY', 'HL_Knee',
-    'HR_HipX', 'HR_HipY', 'HR_Knee',
+# The report's order (FL, FR, HL, HR x HipX, HipY, Knee) with the joint names of Deep Robotics'
+# model (deep_robotics_model Lite3.urdf), which lite3_description uses.
+JOINT_NAMES = tuple(
+    f'{leg}_{joint}_joint'
+    for leg in ('FL', 'FR', 'HL', 'HR')
+    for joint in ('HipX', 'HipY', 'Knee')
 )
 JOINT_ARRAY = struct.Struct('<12d')
 

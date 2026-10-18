@@ -138,4 +138,6 @@ def test_joint_round_trip():
     assert datagram.code == p.JOINT_VELOCITIES
     assert list(p.decode_joints(datagram.payload)) == values
     assert p.decode_joints(b'\x00' * 40) is None
-    assert len(p.JOINT_NAMES) == 12
+    # the document's order, with the joint names of the official model (lite3_description)
+    assert p.JOINT_NAMES[:3] == ('FL_HipX_joint', 'FL_HipY_joint', 'FL_Knee_joint')
+    assert p.JOINT_NAMES[-1] == 'HR_Knee_joint' and len(p.JOINT_NAMES) == 12

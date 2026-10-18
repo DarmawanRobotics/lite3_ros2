@@ -1,4 +1,4 @@
-"""The Lite3 URDF: legs, sensor frames and the camera / LiDAR variants."""
+"""The Lite3 URDF: the official model's legs, the manual's sensor frames, the variants."""
 
 import math
 from pathlib import Path
@@ -8,9 +8,12 @@ import pytest
 
 xacro = pytest.importorskip('xacro')
 
-XACRO = Path(__file__).resolve().parents[1] / 'urdf' / 'lite3.urdf.xacro'
+PACKAGE = Path(__file__).resolve().parents[1]
+XACRO = PACKAGE / 'urdf' / 'lite3.urdf.xacro'
+# lite3_driver's JOINT_NAMES: the report's order with the official model's names
 JOINTS = [
-    f'{leg}_{joint}' for leg in ('FL', 'FR', 'HL', 'HR') for joint in ('HipX', 'HipY', 'Knee')
+    f'{leg}_{joint}_joint' for leg in ('FL', 'FR', 'HL', 'HR')
+    for joint in ('HipX', 'HipY', 'Knee')
 ]
 # FAST-LIO's extrinsic_T in Molly (molly_odometry/config/fast_lio.yaml): the LiDAR in the IMU
 FAST_LIO_EXTRINSIC_T = (-0.011, -0.02329, 0.04412)
@@ -46,31 +49,48 @@ def parent_of(root, child: str) -> str:
     return ''
 
 
-def test_legs_match_the_document():
-    """12 revolute joints with the driver's names, positions and ranges of the document."""
+def test_legs_are_the_official_model():
+    """12 revolute joints in the driver's names, placed and limited as in Lite3.urdf."""
     root = urdf()
     revolute = [j.get('name') for j in root.findall("joint[@type='revolute']")]
     assert sorted(revolute) == sorted(JOINTS)
-    assert origin(joint(root, 'FL_HipX')) == (0.1745, 0.062, 0.0)
-    assert origin(joint(root, 'HR_HipX')) == (-0.1745, -0.062, 0.0)
-    assert origin(joint(root, 'FR_HipY')) == (0.0, -0.0985, 0.0)
-    assert origin(joint(root, 'HL_Knee')) == (0.0, 0.0, -0.2)
-    assert origin(joint(root, 'FL_foot_joint')) == (0.0, 0.0, -0.21)
-    limit = joint(root, 'FL_Knee').find('limit')
-    assert float(limit.get('lower')) == pytest.approx(math.radians(34.5))
-    assert float(limit.get('upper')) == pytest.approx(math.radians(156.0))
-    limit = joint(root, 'HR_HipY').find('limit')
-    assert float(limit.get('lower')) == pytest.approx(math.radians(-200.0))
+    assert origin(joint(root, 'FL_HipX_joint')) == (0.1745, 0.062, 0.0)
+    assert origin(joint(root, 'HR_HipX_joint')) == (-0.1745, -0.062, 0.0)
+    assert origin(joint(root, 'FR_HipY_joint')) == (0.0, -0.09735, 0.0)
+    assert origin(joint(root, 'HL_Knee_joint')) == (0.0, 0.0, -0.2)
+    assert origin(joint(root, 'FL_Ankle')) == (0.0, 0.0, -0.21012)
+    limit = joint(root, 'FL_Knee_joint').find('limit')
+    assert (float(limit.get('lower')), float(limit.get('upper'))) == (0.524, 2.792)
+    axis = joint(root, 'FR_HipX_joint').find('axis').get('xyz')
+    assert [float(v) for v in axis.split()] == [-1.0, 0.0, 0.0]
+    assert parent_of(root, 'TORSO') == 'base_link'
+
+
+def test_meshes_are_in_the_package():
+    """Every mesh the URDF names is installed with the package."""
+    root = urdf()
+    files = {m.get('filename') for m in root.iter('mesh')}
+    assert files
+    for name in files:
+        assert name.startswith('package://lite3_description/meshes/')
+        assert (PACKAGE / 'meshes' / name.rsplit('/', 1)[1]).is_file(), name
 
 
 def test_sensor_frames_and_fast_lio_extrinsic():
-    """IMU and Mid-360 where the document puts them; the LiDAR IMU agrees with FAST-LIO."""
+    """IMU and Mid-360 where the manual puts them; the LiDAR IMU agrees with FAST-LIO."""
     root = urdf()
     assert origin(joint(root, 'imu_joint')) == (0.005, 0.0, 0.0)
     assert origin(joint(root, 'livox_joint')) == (0.18678, 0.0, 0.12498)
     imu = origin(joint(root, 'livox_imu_joint'))
     assert imu == pytest.approx(tuple(-v for v in FAST_LIO_EXTRINSIC_T))
     assert parent_of(root, 'livox_imu_frame') == 'livox_frame'
+
+
+def test_robosense_lidar():
+    """lidar:=robosense: the LiDAR edition's RoboSense at the manual's position."""
+    root = urdf(lidar='robosense')
+    assert origin(joint(root, 'rslidar_joint')) == (0.2033, 0.0, 0.12906)
+    assert not links(root) & {'livox_frame', 'livox_imu_frame'}
 
 
 @pytest.mark.parametrize('camera,expected', [
@@ -90,8 +110,8 @@ def test_camera_variants(camera, expected):
 
 
 def test_lidar_can_be_left_out():
-    """lidar:=none drops the Livox frames."""
-    assert not links(urdf(lidar='none')) & {'livox_frame', 'livox_imu_frame'}
+    """lidar:=none drops every LiDAR frame."""
+    assert not links(urdf(lidar='none')) & {'livox_frame', 'livox_imu_frame', 'rslidar'}
 
 
 def test_tree_rooted_at_base_link_without_foreign_frames():
