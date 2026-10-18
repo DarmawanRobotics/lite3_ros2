@@ -20,25 +20,12 @@ Livox Mid-360 and the camera.**
 
 ---
 
-The Lite3's motion host takes commands and reports its state over UDP (Deep Robotics *UDP
-Commands* V1.1.0). This repository turns that into ROS 2 Humble topics and services on an added
+The Lite3's motion host takes commands and reports its state over UDP (Deep Robotics manual
+V2.2.1, *UDP Commands* V1.1.0-0). This repository turns that into ROS 2 Humble topics and services on an added
 computer (a Jetson Orin NX with a Livox Mid-360), and follows the robot package contract of
 [Molly](https://github.com/DarmawanRobotics/Molly) (`src/xtras/README.md` there), where it is the
 `ROBOT_BRINGUP=lite3_bringup` of the tour guide.
 
-```mermaid
-flowchart LR
-    subgraph Lite3
-        MH[motion host<br/>192.168.1.120] --- CAM[front camera<br/>RTSP :8554/test]
-    end
-    subgraph Jetson[Jetson, ROS 2 Humble]
-        DRV[lite3_driver] --- RSP[robot_state_publisher<br/>lite3_description]
-        RTSP[lite3_camera] --- LVX[livox_ros_driver2]
-    end
-    MH <-- UDP 43893 / 43897 --> DRV
-    CAM -- RTSP --> RTSP
-    MID[Livox Mid-360] -- Ethernet --> LVX
-```
 
 ## Packages
 
@@ -46,7 +33,7 @@ flowchart LR
 |---|---|
 | [`lite3_driver`](lite3_driver/README.md) | the UDP driver: `cmd_vel` → speed commands in navigation mode; state → `odom`, `imu`, `battery`, `joint_states`, `ultrasound/*`, `state`, `diagnostics`; every robot command as a `std_srvs/Trigger` service; gestures |
 | [`lite3_interfaces`](lite3_interfaces/README.md) | `RobotState`: basic state, gait, motion, battery, ultrasound, link, gesture |
-| [`lite3_description`](lite3_description/README.md) | URDF: legs from the document, Mid-360, D435i or front camera, IMU and ultrasound frames |
+| [`lite3_description`](lite3_description/README.md) | URDF: Deep Robotics' model with its meshes, Mid-360 / RoboSense, D435i or front camera, IMU and ultrasound frames |
 | [`lite3_camera`](lite3_camera/README.md) | the robot's wide-angle front camera over RTSP: Jetson hardware decoding, reconnects, rectification |
 | [`lite3_bringup`](lite3_bringup/README.md) | one launch for all of it, and [`scripts/lite3_setup.sh`](lite3_bringup/scripts/lite3_setup.sh) |
 
@@ -62,11 +49,11 @@ flowchart LR
 
 ## Network
 
-From the Deep Robotics documents (*UDP Commands* V1.1.0, *SDK Deploy* V1.0.0):
+From the Deep Robotics manual V2.2.1 (*UDP Commands* V1.1.0-0, *SDK Deploy* V1.0.0):
 
 | | |
 |---|---|
-| motion host | `192.168.1.120` (some robots `192.168.2.1`), commands to UDP **43893** |
+| motion host | `192.168.1.120` on the robot's Ethernet, `192.168.2.1` on its Wi-Fi; commands to UDP **43893** |
 | perception host | `192.168.1.103` (Deep Robotics' own computer) |
 | state reports | sent to every `ips` / `ports` entry of `~/jy_exe/conf/network.toml` on the motion host, port **43897** by default |
 | front camera | `rtsp://192.168.1.120:8554/test` |
@@ -134,8 +121,9 @@ On a new robot, in an open area with someone at the remote:
 5. **Forward:** `ros2 topic pub -r 20 /robot/cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}"`
    walks forward. Stop the publisher: the robot stops within 0.5 s.
 6. **Turn and strafe (REP-103):** `{angular: {z: 0.3}}` must turn the robot **left**
-   (counter-clockwise seen from above), else set `invert_wz: true`; `{linear: {y: 0.1}}` must move
-   it **left**, else `invert_vy: true`. Set both in your copy of
+   (counter-clockwise seen from above; the driver sends it negated, as Deep Robotics' own bridge
+   does), else set `invert_wz: true`; `{linear: {y: 0.1}}` must move it **left**, else
+   `invert_vy: true`. Set both in your copy of
    [driver_params.yaml](lite3_driver/config/driver_params.yaml) (`driver_params:=`).
 7. **Frames:** `ros2 run tf2_ros tf2_echo base_link livox_imu_frame`, and measure the front
    camera and ultrasound positions: the URDF has estimates for them
@@ -154,6 +142,8 @@ On a new robot, in an open area with someone at the remote:
 - Gestures only run while the robot stands still; any motion command stops them. `hello` makes
   a standing robot sit down first (the action needs sitting) and stand up again after.
 - `save_data` makes the robot save its log, soft-stop and **quit its motion program**.
+- In SDK mode (Deep Robotics' `sdk_deploy`, switched on in the app) an RL policy replaces the
+  motion program: this driver's commands do not apply until SDK mode is off again.
 - With `auto_navigation_mode` the driver switches the robot to navigation mode when motion
   starts: the remote then drives only after switching back to manual.
 
@@ -169,6 +159,7 @@ interface; gestures against a simulated motion host; the URDF against the docume
 the camera's pipelines, calibration and frame publishing without a camera. CI runs the same in a
 `ros:humble` container, plus shellcheck.
 
-Joint axes and leg inertials come from Deep Robotics' Lite3 URDF
-([DeepRoboticsLab/Lite3_rl_training](https://github.com/DeepRoboticsLab/Lite3_rl_training),
-BSD-3-Clause). lite3_ros2 is released under the [Apache License 2.0](LICENSE).
+The URDF and its meshes are Deep Robotics' model
+([DeepRoboticsLab/deep_robotics_model](https://github.com/DeepRoboticsLab/deep_robotics_model),
+BSD-3-Clause, [license](lite3_description/LICENSE.deep_robotics_model)). lite3_ros2 is released
+under the [Apache License 2.0](LICENSE).

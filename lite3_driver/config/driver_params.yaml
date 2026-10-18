@@ -1,4 +1,4 @@
-# lite3_driver: the Lite3 motion host over UDP (Deep Robotics "UDP Commands" V1.1.0).
+# lite3_driver: the Lite3 motion host over UDP (manual V2.2.1, "UDP Commands" V1.1.0-0).
 # "/**" matches the driver in any namespace and under any node name (a bare "lite3_driver:"
 # would not match /robot/lite3_driver).
 /**:
@@ -13,7 +13,8 @@
     heartbeat_hz: 5.0                 # the motion host wants at least 2 Hz
 
     # Velocity: cmd_vel (base_link, REP-103) -> speed commands 0x0140 / 0x0145 / 0x0141, which
-    # the robot obeys in navigation mode only.
+    # the robot obeys in navigation mode only. The yaw rate goes out negated: the motion host
+    # turns right for a positive value (Deep Robotics' own bridge sends -angular.z as well).
     cmd_rate_hz: 20.0                 # speed commands per second while cmd_vel is fresh
     cmd_timeout_sec: 0.5              # cmd_vel older than this: zeros (the Molly contract)
     stop_burst_sec: 0.5               # zeros streamed after the timeout, then silence
@@ -23,7 +24,7 @@
     max_vy: 0.5                       # m/s, protocol range 0.5
     max_wz: 1.5                       # rad/s, protocol range 1.5
     invert_vy: false                  # true if +linear.y moves the robot RIGHT (checklist)
-    invert_wz: false                  # true if +angular.z turns the robot RIGHT (checklist)
+    invert_wz: false                  # true if +angular.z still turns the robot RIGHT (checklist)
 
     # Outputs
     odom_frame: odom                  # header of the odom message only: no TF is published
@@ -36,6 +37,7 @@
     ultrasound_hz: 10.0
     state_timeout_sec: 1.0            # no state report for this long: disconnected
     low_battery: 0.2                  # 0-1, diagnostics warn below
+    fast_imu: true                    # imu from the 200 Hz 0x010901 datagrams when they arrive
 
     # Gestures (std_srvs/Trigger, blocking until done). Pose-mode keyframes: axis values in
     # [-32767, 32767] beyond the dead zones (pitch 6553, yaw 9553); pitch > 0 lowers the head,
