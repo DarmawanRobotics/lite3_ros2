@@ -240,6 +240,13 @@ def test_a_manual_takeover_holds_while_cmd_vel_streams(rig):
         streamer.join(timeout=1.0)
 
 
+def test_emergency_stop_goes_out_three_times(rig):
+    """The soft e-stop is repeated: one lost datagram must not lose it."""
+    since = time.monotonic()
+    assert rig.call('emergency_stop').success
+    assert wait_for(lambda: rig.host.codes(since).count(p.SOFT_ESTOP) == 3)
+
+
 def test_stand_up_and_sit_down_follow_the_state(rig):
     """Stand up toggles only from sitting; sit down is refused without state."""
     assert not rig.call('sit_down').success  # no state yet

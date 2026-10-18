@@ -35,6 +35,7 @@ from std_srvs.srv import Trigger
 ULTRASOUND_MIN = 0.28
 ULTRASOUND_MAX = 4.5
 ULTRASOUND_FOV = 0.5  # rad, nominal cone of the Lite3 ultrasound sensors
+ESTOP_REPEATS = 3
 FAST_IMU_TIMEOUT = 0.5  # s without a 0x010901 datagram: imu comes from the state report again
 
 # Plain commands: service name -> (code, value) datagrams sent in this order.
@@ -321,7 +322,8 @@ class Lite3DriverNode(Node):
         self._policy.stop(time.monotonic())
         self._runner.abort()
         self._link.send_all(self._policy.speeds(0.0, 0.0, 0.0))
-        response.success = self.send_commands(((p.SOFT_ESTOP, 0),))
+        # three times: one lost UDP datagram must not lose the stop
+        response.success = self.send_commands(((p.SOFT_ESTOP, 0),) * ESTOP_REPEATS)
         response.message = 'soft emergency stop sent' if response.success else (
             self._link.last_error
         )

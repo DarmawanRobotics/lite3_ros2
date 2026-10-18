@@ -37,7 +37,7 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 | Service | Sends | Notes |
 |---|---|---|
 | `stand_up`, `sit_down` | stand/sit toggle `0x21010202` | state aware: nothing to do when already there, refused while walking or in a transition |
-| `emergency_stop` | soft e-stop `0x21020C0E` | also zeroes the velocity and stops a gesture |
+| `emergency_stop` | soft e-stop `0x21020C0E`, sent three times | also zeroes the velocity and stops a gesture |
 | `navigation_mode`, `manual_mode` | `0x21010C03`, `0x21010C02` | navigation: speed commands are obeyed; manual: the remote drives |
 | `move_mode`, `pose_mode` | `0x21010D06`, `0x21010D05` | |
 | `gait_slow`, `gait_medium`, `gait_fast`, `gait_crawl` | flat gaits `0x21010300`, `0x21010307`, `0x21010303`, `0x21010406` | not in AI state |

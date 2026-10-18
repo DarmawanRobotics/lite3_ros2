@@ -10,6 +10,7 @@ versions follow [SemVer](https://semver.org).
   took the robot back from an operator who had switched it to manual on the remote. It goes out
   when motion starts after a quiet stream (`mode_repeats` 3, `mode_repeat_sec` 0.2, replacing
   `mode_refresh_sec`); `manual_mode` drops the rest of the repeats.
+- `lite3_driver`: `emergency_stop` sends the soft e-stop three times.
 
 ### Changed
 - `lite3_driver`: the yaw rate of `cmd_vel` goes out negated (`0x0141`): the motion host turns
