@@ -65,7 +65,9 @@ class VelocityPolicy:
         )
 
     def command(self, vx: float, vy: float, wz: float, now: float):
-        """Take a new cmd_vel (base_link, REP-103)."""
+        """Take a new cmd_vel (base_link, REP-103); a non-finite component makes it a stop."""
+        if not all(math.isfinite(v) for v in (vx, vy, wz)):
+            vx = vy = wz = 0.0
         lx, ly, lw = self.limits()
         self._cmd = (clamp(vx, lx), clamp(vy, ly), clamp(wz, lw))
         self._stamp = now

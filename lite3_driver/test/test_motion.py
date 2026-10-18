@@ -97,13 +97,16 @@ def test_zero_commands_do_not_switch_modes():
 
 
 def test_limits_and_non_finite_values():
-    """Commands are clamped to the configured and protocol limits; NaN counts as 0."""
+    """Commands are clamped to the configured and protocol limits; NaN anywhere is a stop."""
     policy = VelocityPolicy(VelocityConfig(max_vx=0.6, max_vy=2.0, max_wz=1.0))
-    policy.command(5.0, -5.0, float('nan'), now=0.0)
+    policy.command(5.0, -5.0, 0.0, now=0.0)
     assert policy.current == (0.6, -0.5, 0.0)
     assert speeds(policy.tick(0.0)) == {p.SPEED_VX: 0.6, p.SPEED_VY: -0.5, p.SPEED_WZ: 0.0}
     policy.command(0.0, 0.0, -3.0, now=1.0)
     assert speeds(policy.tick(1.0))[p.SPEED_WZ] == 1.0  # clockwise, clamped to 1.0
+    policy.command(0.5, float('nan'), 0.2, now=2.0)
+    assert policy.current == (0.0, 0.0, 0.0)  # not x 0.5 with y dropped
+    assert speeds(policy.tick(2.0)) == {p.SPEED_VX: 0.0, p.SPEED_VY: 0.0, p.SPEED_WZ: 0.0}
 
 
 def test_inversions_for_a_robot_that_disagrees():

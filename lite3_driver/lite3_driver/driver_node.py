@@ -7,6 +7,7 @@ IMU, battery, joint states, ultrasound and the RobotState message. Every robot c
 std_srvs/Trigger service; gestures block until they are done.
 """
 
+import math
 import threading
 import time
 
@@ -266,7 +267,14 @@ class Lite3DriverNode(Node):
     def on_cmd_vel(self, msg: Twist):
         """Take a velocity command; any motion stops a running gesture."""
         now = time.monotonic()
-        self._policy.command(msg.linear.x, msg.linear.y, msg.angular.z, now)
+        values = (msg.linear.x, msg.linear.y, msg.linear.z,
+                  msg.angular.x, msg.angular.y, msg.angular.z)
+        if all(math.isfinite(v) for v in values):
+            self._policy.command(msg.linear.x, msg.linear.y, msg.angular.z, now)
+        else:
+            self.get_logger().warn('cmd_vel with NaN or inf: stopping',
+                                   throttle_duration_sec=2.0)
+            self._policy.command(0.0, 0.0, 0.0, now)
         if self._policy.moving(now) and not self._policy.driving:
             self.get_logger().warn(
                 f'cmd_vel not sent ({self._policy.gate}): call stand_up after a hold, then '

@@ -23,7 +23,7 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 
 | | Name | Type | |
 |---|---|---|---|
-| sub | `cmd_vel` | `geometry_msgs/Twist` | `base_link`, REP-103: `linear.x` forward, `linear.y` left, `angular.z` counter-clockwise; zeros after `cmd_timeout_sec` without a command |
+| sub | `cmd_vel` | `geometry_msgs/Twist` | `base_link`, REP-103: `linear.x` forward, `linear.y` left, `angular.z` counter-clockwise; zeros after `cmd_timeout_sec` without a command; NaN or inf in any field is a stop |
 | pub | `odom` | `nav_msgs/Odometry` | leg odometry: pose from `pos_world`, twist in `base_link` from `vel_body`; **no TF** |
 | pub | `imu` | `sensor_msgs/Imu` | attitude (report degrees → quaternion), rates, acceleration, frame `imu_link`; from the 200 Hz IMU datagram `0x010901` when the motion host sends it, else from the state report |
 | pub | `battery` | `sensor_msgs/BatteryState` | `percentage` 0–1, `battery_hz` |
