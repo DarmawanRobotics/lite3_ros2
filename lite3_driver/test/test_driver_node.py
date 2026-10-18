@@ -215,6 +215,38 @@ def test_cmd_vel_streams_speeds_then_zeros_then_silence(rig):
     assert p.HEARTBEAT in rig.host.codes(quiet)
 
 
+def test_a_manual_takeover_holds_while_cmd_vel_streams(rig):
+    """Navigation mode goes out as motion starts, then never again while cmd_vel streams."""
+    assert wait_for(lambda: p.HEARTBEAT in rig.host.codes())
+    stop = threading.Event()
+
+    def stream():
+        while not stop.is_set():
+            rig.cmd.publish(Twist(linear=Vector3(x=0.1)))
+            time.sleep(0.05)
+
+    start = time.monotonic()
+    streamer = threading.Thread(target=stream, daemon=True)
+    streamer.start()
+    try:
+        assert wait_for(lambda: rig.host.codes(start).count(p.NAVIGATION_MODE) == 3)
+        assert rig.call('manual_mode').success  # or the operator on the remote
+        since = time.monotonic()
+        time.sleep(2.5)  # the driver used to send navigation mode again every 2 s
+        assert p.NAVIGATION_MODE not in rig.host.codes(since)
+        assert (p.SPEED_VX, 0.1) in rig.host.speeds(since)
+    finally:
+        stop.set()
+        streamer.join(timeout=1.0)
+
+
+def test_emergency_stop_goes_out_three_times(rig):
+    """The soft e-stop is repeated: one lost datagram must not lose it."""
+    since = time.monotonic()
+    assert rig.call('emergency_stop').success
+    assert wait_for(lambda: rig.host.codes(since).count(p.SOFT_ESTOP) == 3)
+
+
 def test_stand_up_and_sit_down_follow_the_state(rig):
     """Stand up toggles only from sitting; sit down is refused without state."""
     assert not rig.call('sit_down').success  # no state yet

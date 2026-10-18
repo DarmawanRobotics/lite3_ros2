@@ -21,7 +21,8 @@ class VelocityConfig:
     cmd_timeout_sec: float = 0.5
     stop_burst_sec: float = 0.5
     auto_navigation_mode: bool = True
-    mode_refresh_sec: float = 2.0
+    mode_repeats: int = 3
+    mode_repeat_sec: float = 0.2
     invert_vy: bool = False
     invert_wz: bool = False
 
@@ -48,6 +49,8 @@ class VelocityPolicy:
         self._stamp: Optional[float] = None
         self._last_motion: Optional[float] = None
         self._mode_sent: Optional[float] = None
+        self._mode_count = 0
+        self._manual_hold = False
 
     def limits(self) -> Tuple[float, float, float]:
         """Return the effective limits: the configured ones within the protocol's ranges."""
@@ -65,6 +68,10 @@ class VelocityPolicy:
         self._stamp = now
         if is_motion(self._cmd):
             self._last_motion = now
+
+    def hold_manual(self):
+        """Send no navigation mode until the stream has gone idle (a manual takeover)."""
+        self._manual_hold = True
 
     def stop(self, now: float):
         """Drop the current command; zeros are streamed until the stream runs out."""
@@ -100,15 +107,22 @@ class VelocityPolicy:
         age = now - self._stamp
         if age <= c.cmd_timeout_sec:
             out = []
-            if c.auto_navigation_mode and is_motion(self._cmd) and (
-                self._mode_sent is None or now - self._mode_sent >= c.mode_refresh_sec
-            ):
+            # Navigation mode goes out when motion starts after idle, mode_repeats times (UDP
+            # may drop one), and never again while the stream lasts: an operator who switches
+            # the robot to manual on the remote keeps it until the stream goes idle.
+            if (c.auto_navigation_mode and is_motion(self._cmd) and not self._manual_hold
+                    and self._mode_count < c.mode_repeats
+                    and (self._mode_sent is None or now - self._mode_sent >= c.mode_repeat_sec)):
                 out.append(NAVIGATION_DATAGRAM)
                 self._mode_sent = now
+                self._mode_count += 1
             return out + self.speeds(*self._cmd)
         if age <= c.cmd_timeout_sec + c.stop_burst_sec:
             return self.speeds(0.0, 0.0, 0.0)
-        self._mode_sent = None  # idle: the next motion asks for navigation mode again
+        # idle: the next motion asks for navigation mode again
+        self._mode_sent = None
+        self._mode_count = 0
+        self._manual_hold = False
         return []
 
     def speeds(self, vx: float, vy: float, wz: float) -> List[bytes]:

@@ -137,15 +137,18 @@ On a new robot, in an open area with someone at the remote:
 
 - The driver stops on its own: no `cmd_vel` for 0.5 s gives zeros, then silence. Only Molly's
   control mux should publish on `/robot/cmd_vel`.
-- `emergency_stop` sends the motion host's soft emergency stop; the remote and the robot's own
-  stop button always work too.
+- `emergency_stop` sends the motion host's soft emergency stop (three times, against a lost
+  datagram); the remote and the robot's own stop button always work too.
 - Gestures only run while the robot stands still; any motion command stops them. `hello` makes
   a standing robot sit down first (the action needs sitting) and stand up again after.
 - `save_data` makes the robot save its log, soft-stop and **quit its motion program**.
 - In SDK mode (Deep Robotics' `sdk_deploy`, switched on in the app) an RL policy replaces the
   motion program: this driver's commands do not apply until SDK mode is off again.
 - With `auto_navigation_mode` the driver switches the robot to navigation mode when motion
-  starts: the remote then drives only after switching back to manual.
+  starts after `cmd_vel` was quiet, and not again while `cmd_vel` streams: switching to manual
+  on the remote takes the robot over until `cmd_vel` has been quiet for 1 s (the state report
+  does not say which mode the robot is in, so the driver cannot tell). Set it to `false` where
+  only the remote or an explicit `navigation_mode` call may hand the robot to `cmd_vel`.
 
 ## Develop
 

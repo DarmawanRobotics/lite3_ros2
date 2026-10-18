@@ -35,6 +35,7 @@ from std_srvs.srv import Trigger
 ULTRASOUND_MIN = 0.28
 ULTRASOUND_MAX = 4.5
 ULTRASOUND_FOV = 0.5  # rad, nominal cone of the Lite3 ultrasound sensors
+ESTOP_REPEATS = 3
 FAST_IMU_TIMEOUT = 0.5  # s without a 0x010901 datagram: imu comes from the state report again
 
 # Plain commands: service name -> (code, value) datagrams sent in this order.
@@ -78,7 +79,8 @@ class Lite3DriverNode(Node):
         declare('cmd_timeout_sec', 0.5)
         declare('stop_burst_sec', 0.5)
         declare('auto_navigation_mode', True)
-        declare('mode_refresh_sec', 2.0)
+        declare('mode_repeats', 3)
+        declare('mode_repeat_sec', 0.2)
         declare('max_vx', 1.0)
         declare('max_vy', 0.5)
         declare('max_wz', 1.5)
@@ -113,7 +115,8 @@ class Lite3DriverNode(Node):
             cmd_timeout_sec=float(value('cmd_timeout_sec')),
             stop_burst_sec=float(value('stop_burst_sec')),
             auto_navigation_mode=bool(value('auto_navigation_mode')),
-            mode_refresh_sec=float(value('mode_refresh_sec')),
+            mode_repeats=int(value('mode_repeats')),
+            mode_repeat_sec=float(value('mode_repeat_sec')),
             invert_vy=bool(value('invert_vy')),
             invert_wz=bool(value('invert_wz')),
         ))
@@ -319,7 +322,8 @@ class Lite3DriverNode(Node):
         self._policy.stop(time.monotonic())
         self._runner.abort()
         self._link.send_all(self._policy.speeds(0.0, 0.0, 0.0))
-        response.success = self.send_commands(((p.SOFT_ESTOP, 0),))
+        # three times: one lost UDP datagram must not lose the stop
+        response.success = self.send_commands(((p.SOFT_ESTOP, 0),) * ESTOP_REPEATS)
         response.message = 'soft emergency stop sent' if response.success else (
             self._link.last_error
         )
@@ -344,6 +348,8 @@ class Lite3DriverNode(Node):
             response.success = self.send_commands(datagrams)
             if response.success and name in MODES:
                 self._control_mode = MODES[name]
+                if name == 'manual_mode':
+                    self._policy.hold_manual()  # auto_navigation_mode stays out of this stream
             note = '' if self.connected() else ' (no state from the motion host)'
             response.message = f'{name} sent{note}' if response.success else self._link.last_error
             return response

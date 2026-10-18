@@ -37,7 +37,7 @@ ros2 service call /robot/stand_up std_srvs/srv/Trigger
 | Service | Sends | Notes |
 |---|---|---|
 | `stand_up`, `sit_down` | stand/sit toggle `0x21010202` | state aware: nothing to do when already there, refused while walking or in a transition |
-| `emergency_stop` | soft e-stop `0x21020C0E` | also zeroes the velocity and stops a gesture |
+| `emergency_stop` | soft e-stop `0x21020C0E`, sent three times | also zeroes the velocity and stops a gesture |
 | `navigation_mode`, `manual_mode` | `0x21010C03`, `0x21010C02` | navigation: speed commands are obeyed; manual: the remote drives |
 | `move_mode`, `pose_mode` | `0x21010D06`, `0x21010D05` | |
 | `gait_slow`, `gait_medium`, `gait_fast`, `gait_crawl` | flat gaits `0x21010300`, `0x21010307`, `0x21010303`, `0x21010406` | not in AI state |
@@ -60,10 +60,17 @@ as the three speed commands `0x0140` (x), `0x0145` (y), `0x0141` (yaw) at `cmd_r
 go out as they are; the yaw rate is negated, because the motion host turns right for a positive
 value (like its axis commands): Deep Robotics' own ROS 2 bridge
 ([Lite3_ROS](https://github.com/DeepRoboticsLab/Lite3_ROS), `Jetson2Motion.cpp`) sends
-`-angular.z` too. The robot only
-obeys them in navigation mode: with `auto_navigation_mode` the driver sends `0x21010C03` when
-motion starts after an idle stream, and every `mode_refresh_sec` while moving. When `cmd_vel`
-goes quiet for `cmd_timeout_sec` the driver sends zeros for `stop_burst_sec`, then nothing.
+`-angular.z` too. When `cmd_vel` goes quiet for `cmd_timeout_sec` the driver sends zeros for
+`stop_burst_sec`, then nothing.
+
+The robot only obeys speed commands in navigation mode. With `auto_navigation_mode` the driver
+sends `0x21010C03` when motion starts after an idle stream, `mode_repeats` times
+`mode_repeat_sec` apart, and not again until `cmd_vel` has gone quiet: the state report says
+nothing about the control mode, so this is how an operator who switches the robot to manual on
+the remote keeps it while `cmd_vel` streams. Zeros keep the stream alive too. Calling
+`manual_mode` drops the remaining repeats of the current stream. After a takeover the robot
+follows `cmd_vel` again once it has been quiet for `cmd_timeout_sec + stop_burst_sec`, or at
+once on `navigation_mode` (the service or the remote).
 
 If the robot still turns or strafes the wrong way, set `invert_wz` / `invert_vy` ([Verify on the real robot](../README.md#verify-on-the-real-robot)).
 
@@ -92,7 +99,7 @@ read as 0–1 or as a percentage.
 | `local_ip`, `local_port` | `0.0.0.0`, `43897` | where reports arrive (listed in the motion host's `network.toml`) |
 | `heartbeat_hz` | 5.0 | at least 2 Hz |
 | `cmd_rate_hz`, `cmd_timeout_sec`, `stop_burst_sec` | 20.0, 0.5, 0.5 | velocity stream and watchdog |
-| `auto_navigation_mode`, `mode_refresh_sec` | true, 2.0 | |
+| `auto_navigation_mode`, `mode_repeats`, `mode_repeat_sec` | true, 3, 0.2 | navigation mode when motion starts |
 | `max_vx`, `max_vy`, `max_wz` | 1.0, 0.5, 1.5 | |
 | `invert_vy`, `invert_wz` | false | sign fixes, see above |
 | `odom_frame`, `base_frame`, `imu_frame` | `odom`, `base_link`, `imu_link` | message frames (no TF) |
