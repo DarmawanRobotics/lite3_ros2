@@ -70,11 +70,12 @@ the robot off. `diagnostics` shows the gate (`velocity`: `ok`, `hold:<service>`,
 or quiet cmd_vel`) and turns WARN while motion is asked for and held back.
 
 The robot only obeys speed commands in navigation mode. With `auto_navigation_mode` the driver
-sends `0x21010C03` when motion starts after an idle stream, `mode_repeats` times
-`mode_repeat_sec` apart, and not again until `cmd_vel` has gone quiet: the state report says
-nothing about the control mode, so this is how an operator who switches the robot to manual on
-the remote keeps it while `cmd_vel` streams. Zeros keep the stream alive too. Calling
-`manual_mode` drops the remaining repeats of the current stream. After a takeover the robot
+sends `0x21010C03` when motion starts after an idle stream, then `mode_repeats - 1` more times
+`mode_repeat_sec` apart right after it, and not again until `cmd_vel` has gone quiet: the state
+report says nothing about the control mode, so this is how an operator who switches the robot
+to manual on the remote keeps it while `cmd_vel` streams. Zeros keep the stream alive, and so
+does a hold: after `sit_down` and `stand_up` in a stream that never went quiet, no navigation
+mode goes out. Calling `manual_mode` drops the remaining repeats of the current stream. After a takeover the robot
 follows `cmd_vel` again once it has been quiet for `cmd_timeout_sec + stop_burst_sec`, or at
 once on `navigation_mode` (the service or the remote).
 

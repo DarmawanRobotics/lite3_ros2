@@ -153,7 +153,8 @@ def test_a_hold_ignores_a_running_stream_until_release_and_a_zero():
     assert policy.gate == 'ok'
     policy.command(0.3, 0.0, 0.0, now=6.2)
     first = policy.tick(6.2)
-    assert codes(first)[0] == p.NAVIGATION_MODE and speeds(first)[p.SPEED_VX] == 0.3
+    assert speeds(first)[p.SPEED_VX] == 0.3
+    assert p.NAVIGATION_MODE not in codes(first)  # the same stream: no navigation mode again
 
 
 def test_a_quiet_stream_after_the_release_also_rearms():
@@ -174,3 +175,41 @@ def test_auto_navigation_mode_switch(auto):
     policy = VelocityPolicy(VelocityConfig(auto_navigation_mode=auto))
     policy.command(0.2, 0.0, 0.0, now=0.0)
     assert (p.NAVIGATION_MODE in codes(policy.tick(0.0))) is auto
+
+
+def run_stream(policy, until, moving, events=None, step=0.05):
+    """Drive one never-quiet stream at 20 Hz; return when navigation mode went out."""
+    events = events or {}
+    sent = []
+    for i in range(int(round(until / step))):
+        now = round(i * step, 2)
+        policy.command(0.3 if moving(now) else 0.0, 0.0, 0.0, now=now)
+        if now in events:
+            events[now](now)
+        if p.NAVIGATION_MODE in codes(policy.tick(now)):
+            sent.append(now)
+    return sent
+
+
+def test_the_repeats_follow_the_first_one_not_the_next_motion():
+    """One short motion, then a minute of zeros: the remaining repeats do not wait for motion."""
+    policy = VelocityPolicy(VelocityConfig(mode_repeats=3, mode_repeat_sec=0.2))
+    sent = run_stream(policy, 62.0, lambda t: t < 0.01 or t >= 60.0)
+    assert sent and max(sent) < 1.0  # nothing at 60 s, when the same stream moves again
+
+
+def test_a_hold_does_not_start_a_new_stream():
+    """sit_down and stand_up in a stream that never went quiet: no navigation mode after them."""
+    policy = VelocityPolicy(VelocityConfig())
+    events = {3.0: lambda t: policy.hold('sit_down', t), 5.0: lambda t: policy.release()}
+    sent = run_stream(policy, 10.0, lambda t: t < 2.0 or t > 6.0, events)
+    assert sent and max(sent) < 1.0
+
+
+def test_manual_mode_survives_a_hold():
+    """manual_mode, then sit_down and stand_up while cmd_vel never went quiet: still manual."""
+    policy = VelocityPolicy(VelocityConfig())
+    events = {1.0: lambda t: policy.hold_manual(), 3.0: lambda t: policy.hold('sit_down', t),
+              5.0: lambda t: policy.release()}
+    sent = run_stream(policy, 10.0, lambda t: t < 2.0 or t > 6.0, events)
+    assert sent and max(sent) < 1.0
